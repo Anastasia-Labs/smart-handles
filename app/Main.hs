@@ -1,42 +1,48 @@
 {-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Main (main) where
 
+import Cardano.Binary qualified as CBOR
+import Data.Aeson (KeyValue ((.=)), object)
+import Data.Aeson.Encode.Pretty (encodePretty)
+import Data.Bifunctor (
+  first,
+ )
+import Data.ByteString.Base16 qualified as Base16
+import Data.ByteString.Lazy qualified as LBS
 import Data.Default (
   def,
- )
-import Ply.Plutarch (
-  writeTypedScript,
  )
 import Data.Text (
   Text,
   pack,
  )
+import Data.Text.Encoding qualified as Text
 import Plutarch (
   Config (Config),
   TracingMode (DoTracing),
   compile,
  )
+import Plutarch.Api.V1.Value (padaSymbol)
 import Plutarch.Evaluate (
   evalScript,
  )
-import "liqwid-plutarch-extra" Plutarch.Extra.Script (
-  applyArguments,
- )
-import Data.ByteString.Base16 qualified as Base16
-import Data.ByteString.Lazy qualified as LBS
-import Data.Text.Encoding qualified as Text
-import Cardano.Binary qualified as CBOR
-import Plutarch.Script (Script, serialiseScript)
 import Plutarch.Prelude
-import Data.Aeson (KeyValue ((.=)), object)
-import Data.Aeson.Encode.Pretty (encodePretty)
+import Plutarch.Script (Script, serialiseScript)
+import PlutusLedgerApi.V1.Address (scriptHashAddress)
 import PlutusLedgerApi.V2 (
   Data,
   ExBudget,
  )
-import Data.Bifunctor (
-  first,
+import Ply.Plutarch (
+  writeTypedScript,
  )
+import SmartHandles
+import System.Console.ANSI (Color (..), ColorIntensity (..), ConsoleLayer (..), SGR (..), setSGR)
+import "liqwid-plutarch-extra" Plutarch.Extra.Script (
+  applyArguments,
+ )
+
 encodeSerialiseCBOR :: Script -> Text
 encodeSerialiseCBOR = Text.decodeUtf8 . Base16.encode . CBOR.serialize' . serialiseScript
 
@@ -63,7 +69,13 @@ writePlutusScript title filepath term = do
 
 main :: IO ()
 main = do
-  putStrLn "hi"
-  -- writePlutusScript "Smart Handle Router" "./compiled/smartRouter.plutus" SmartHandle.smartHandleRouteValidatorW
-  -- writePlutusScript "Smart Handle Global" "./compiled/smartGlobal.plutus" SmartHandle.smartHandleStakeValidatorW
- 
+  setSGR [SetColor Foreground Vivid Blue]
+  putStrLn "Exporting Plutarch scripts..."
+
+  setSGR [Reset]
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandle.plutus" psmartHandleValidatorW
+  putStrLn "Exported smart contract handle router"
+
+  setSGR [SetColor Foreground Vivid Green]
+  putStrLn "Done exporting Plutus scripts, have a great day!"
+  setSGR [Reset]
