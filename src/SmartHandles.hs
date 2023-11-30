@@ -6,6 +6,7 @@
 
 module SmartHandles where
 
+import Conversions
 import Plutarch.Api.V1 (PCredential (PPubKeyCredential, PScriptCredential), PDatumHash)
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
 import Plutarch.Api.V1.Value
@@ -19,9 +20,8 @@ import Plutarch.TryFrom (PTryFrom (PTryFromExcess, ptryFrom'))
 import Plutarch.Unsafe
 import PlutusLedgerApi.V1 (Address (..), Credential (..), PubKeyHash (..), ScriptHash, StakingCredential (..))
 import PlutusLedgerApi.V1.Value (CurrencySymbol (..), TokenName (..))
-import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 import Utils
-import Conversions
+import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
 -- Smart Beacon @adaToMin
 -- user sends 50 ADA to @adaToMin

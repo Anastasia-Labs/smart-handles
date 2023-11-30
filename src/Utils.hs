@@ -2,13 +2,13 @@
 
 module Utils where
 
+import Plutarch.Api.V1.AssocMap (plookup)
 import Plutarch.Api.V2
 import Plutarch.Bool
+import Plutarch.Maybe (pfromJust)
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
-import Plutarch.Maybe (pfromJust)
-import Plutarch.Api.V1.AssocMap (plookup)
 
 pexpectJust :: Term s r -> Term s (PMaybe a) -> TermCont @r s (Term s a)
 pexpectJust escape ma = tcont $ \f -> pmatch ma $ \case
