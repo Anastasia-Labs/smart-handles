@@ -19,8 +19,9 @@ import Plutarch.TryFrom (PTryFrom (PTryFromExcess, ptryFrom'))
 import Plutarch.Unsafe
 import PlutusLedgerApi.V1 (Address (..), Credential (..), PubKeyHash (..), ScriptHash, StakingCredential (..))
 import PlutusLedgerApi.V1.Value (CurrencySymbol (..), TokenName (..))
-import Utils (pand'List, pelemAt')
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
+import Utils
+import Conversions
 
 -- Smart Beacon @adaToMin
 -- user sends 50 ADA to @adaToMin
@@ -228,10 +229,8 @@ ptryOwnInput = phoistAcyclic $
 
 psmartHandleValidatorW :: Term s (PSmartConfig :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \smartConfig dat red ctx ->
-  let datum :: Term _ PSmartHandleDatum
-      datum = punsafeCoerce dat
-      redeemer :: Term _ PSmartHandleRedeemer
-      redeemer = punsafeCoerce red
+  let datum = pconvert dat
+      redeemer = pconvert red
    in popaque $ psmartHandleValidator # smartConfig # datum # redeemer # ctx
 
 psmartHandleValidator :: Term s (PSmartConfig :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
@@ -354,8 +353,7 @@ psmartHandleSuccessor datums swapAddress _foldCount smartInput swapOutput = unTe
   smartInputF <- pletFieldsC @'["address", "value", "datum"] smartInput
   swapOutputF <- pletFieldsC @'["address", "value", "datum"] swapOutput
 
-  (POutputDatum smartInpDatum) <- pmatchC smartInputF.datum
-  let smartInputDatum = punsafeCoerce @_ @_ @PAddress (pfield @"outputDatum" # smartInpDatum)
+  let smartInputDatum = pconvert $ presolveDatumData # smartInputF.datum # datums
   smartUser <- pletC smartInputDatum
 
   POutputDatumHash ((pfield @"datumHash" #) -> hash) <- pmatchC swapOutputF.datum
@@ -387,7 +385,7 @@ psmartHandleSuccessor datums swapAddress _foldCount smartInput swapOutput = unTe
 
 smartHandleStakeValidatorW :: Term s (PAddress :--> PStakeValidator)
 smartHandleStakeValidatorW = phoistAcyclic $ plam $ \swapAddress redeemer ctx -> unTermCont $ do
-  let red = punsafeCoerce @_ @_ @PRouterRedeemer redeemer
+  let red = pconvert @PRouterRedeemer redeemer
   redF <- pletFieldsC @'["inputIdxs", "outputIdxs"] red
   ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
   infoF <- pletFieldsC @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
@@ -420,8 +418,8 @@ instance PTryFrom PData PSmartRedeemer
 
 smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
 smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> unTermCont $ do
-  let red = punsafeCoerce @_ @_ @PSmartRedeemer redeemer
-      dat = punsafeCoerce @_ @_ @PAddress datum
+  let red = pconvert @PSmartRedeemer redeemer
+      dat = pconvert @PAddress datum
   ctxF <- pletFieldsC @'["txInfo"] ctx
   pure $
     pmatch red $ \case

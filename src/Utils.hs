@@ -7,6 +7,8 @@ import Plutarch.Bool
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
+import Plutarch.Maybe (pfromJust)
+import Plutarch.Api.V1.AssocMap (plookup)
 
 pexpectJust :: Term s r -> Term s (PMaybe a) -> TermCont @r s (Term s a)
 pexpectJust escape ma = tcont $ \f -> pmatch ma $ \case
@@ -100,3 +102,13 @@ infix 4 #>
 (#>=) :: (PPartialOrd t) => Term s t -> Term s t -> Term s PBool
 a #>= b = b #<= a
 infix 4 #>=
+
+presolveDatum :: Term s (POutputDatum :--> PMap any PDatumHash PDatum :--> PDatum)
+presolveDatum = phoistAcyclic $ plam $ \outputDatum datums ->
+  outputDatum `pmatch` \case
+    POutputDatum r -> (pfield @"outputDatum" # r)
+    POutputDatumHash r -> pfromJust #$ plookup # (pfield @"datumHash" # r) # datums
+    PNoOutputDatum _ -> ptraceError "No output datum"
+
+presolveDatumData :: Term s (POutputDatum :--> PMap any PDatumHash PDatum :--> PData)
+presolveDatumData = phoistAcyclic $ plam $ \outputDatum datums -> pto $ presolveDatum # outputDatum # datums
