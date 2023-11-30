@@ -21,6 +21,13 @@ maintainer:         colll78@colll78
 -- category:
 extra-source-files: CHANGELOG.md
 
+flag optimized
+  description:
+    If optimized is True, some checks are disabled. Disable checks to create optimized scripts.
+
+  default:     False
+  manual:      True
+
 common lang
   ghc-options:
     -Werror -Wall -Wcompat -Wincomplete-uni-patterns
@@ -100,6 +107,8 @@ library
     SmartHandles
     Utils
 
+  other-modules:   Conversions
+
   -- Compile
 
   build-depends:
@@ -120,6 +129,12 @@ library
     , text
 
   hs-source-dirs:  src
+
+  if flag(optimized)
+    hs-source-dirs: src-optimized
+
+  else
+    hs-source-dirs: src-checked
 
 common dependencies
   build-depends:

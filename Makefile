@@ -44,4 +44,4 @@ ci:
 
 .PHONY: export
 export:
-	cabal run smart-handles
+	cabal run smart-handles -f optimized
