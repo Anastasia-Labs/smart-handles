@@ -14,7 +14,10 @@ import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
+import Plutarch.Extra.Numeric ((#^))
+import Plutarch.Extra.Rational ((#%))
 import Plutarch.Extra.ScriptContext (pfromPDatum, ptryFromInlineDatum)
+import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import Plutarch.TryFrom (PTryFrom (PTryFromExcess, ptryFrom'))
 import Plutarch.Unsafe
@@ -249,47 +252,46 @@ psmartHandleValidator = phoistAcyclic $ plam $ \smartConfig dat red ctx -> pmatc
       _ -> perror
 
 pswapRouter :: Term s (PSmartConfig :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
-pswapRouter = phoistAcyclic $ plam $ \_smartConfig dat ownIndex routerIndex ctx -> unTermCont $ do
+pswapRouter = phoistAcyclic $ plam $ \_smartConfig dat ownIndex routerIndex ctx -> P.do
   -- configF <- pletFieldsC @'["cs", "swapScript"] smartConfig -- TODO: not used!
-  oldDatumF <- pletFieldsC @'["owner"] dat
-  ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
-  infoF <- pletFieldsC @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
-  PSpending ((pfield @"_0" #) -> ownRef) <- pmatchC ctxF.purpose
-  indexedInput <- pletFieldsC @'["outRef", "resolved"] (pelemAt @PBuiltinList # ownIndex # infoF.inputs)
+  oldDatumF <- pletFields @'["owner"] dat
+  ctxF <- pletFields @'["txInfo", "purpose"] ctx
+  infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
+  PSpending ((pfield @"_0" #) -> ownRef) <- pmatch ctxF.purpose
+  indexedInput <- pletFields @'["outRef", "resolved"] (pelemAt @PBuiltinList # ownIndex # infoF.inputs)
 
-  ownInputF <- pletFieldsC @'["value", "address"] indexedInput.resolved
-  PScriptCredential ((pfield @"_0" #) -> ownValHash) <- pmatchC (pfield @"credential" # ownInputF.address)
+  ownInputF <- pletFields @'["value", "address"] indexedInput.resolved
+  PScriptCredential ((pfield @"_0" #) -> ownValHash) <- pmatch (pfield @"credential" # ownInputF.address)
 
-  swapOutputF <- pletFieldsC @'["datum", "value", "address"] (pelemAt @PBuiltinList # routerIndex # infoF.outputs)
+  swapOutputF <- pletFields @'["datum", "value", "address"] (pelemAt @PBuiltinList # routerIndex # infoF.outputs)
 
-  POutputDatumHash ((pfield @"datumHash" #) -> hash) <- pmatchC swapOutputF.datum
-  PJust outputDatum <- pmatchC $ AssocMap.plookup # pfromData hash # infoF.datums
+  POutputDatumHash ((pfield @"datumHash" #) -> hash) <- pmatch swapOutputF.datum
+  PJust outputDatum <- pmatch $ AssocMap.plookup # pfromData hash # infoF.datums
   let outDatum = ptryFrom @PMinswapRequestDatum (pto outputDatum) fst
-  outDatumF <- pletFieldsC @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
-  orderStepF <- pletFieldsC @'["desiredAsset", "minReceive"] outDatumF.step
-  desiredAssetF <- pletFieldsC @'["cs", "tn"] orderStepF.desiredAsset
+  outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
+  orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
+  desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
 
   let routerFee = Value.psingleton # padaSymbol # padaToken # (-1_000_000)
-  pure $
-    pif
-      ( pand'List
-          [ ownRef #== indexedInput.outRef
-          , outDatumF.sender #== oldDatumF.owner
-          , outDatumF.receiver #== oldDatumF.owner
-          , pmatch outDatumF.receiverDatumHash $ \case
-              PDJust _ -> pconstant False
-              PDNothing _ -> pconstant True
-          , desiredAssetF.cs #== minCS
-          , desiredAssetF.tn #== minTN
-          , pfromData outDatumF.batcherFee #== pconstant 2_000_000
-          , pfromData outDatumF.outputAda #== pconstant 2_000_000
-          , swapOutputF.address #== swapAddress
-          , pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> routerFee)
-          , pcountInputsAtScript # ownValHash # infoF.inputs #== 1
-          ]
-      )
-      (pconstant ())
-      perror
+  pif
+    ( pand'List
+        [ ownRef #== indexedInput.outRef
+        , outDatumF.sender #== oldDatumF.owner
+        , outDatumF.receiver #== oldDatumF.owner
+        , pmatch outDatumF.receiverDatumHash $ \case
+            PDJust _ -> pconstant False
+            PDNothing _ -> pconstant True
+        , desiredAssetF.cs #== minCS
+        , desiredAssetF.tn #== minTN
+        , pfromData outDatumF.batcherFee #== pconstant 2_000_000
+        , pfromData outDatumF.outputAda #== pconstant 2_000_000
+        , swapOutputF.address #== swapAddress
+        , pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> routerFee)
+        , pcountInputsAtScript # ownValHash # infoF.inputs #== 1
+        ]
+    )
+    (pconstant ())
+    perror
 
 data PRouterRedeemer (s :: S)
   = PRouterRedeemer
@@ -349,61 +351,79 @@ psmartHandleSuccessor ::
   Term s PTxOut ->
   Term s PTxOut ->
   Term s PInteger
-psmartHandleSuccessor datums swapAddress _foldCount smartInput swapOutput = unTermCont $ do
-  smartInputF <- pletFieldsC @'["address", "value", "datum"] smartInput
-  swapOutputF <- pletFieldsC @'["address", "value", "datum"] swapOutput
+psmartHandleSuccessor datums swapAddress _foldCount smartInput swapOutput = P.do
+  smartInputF <- pletFields @'["address", "value", "datum"] smartInput
+  swapOutputF <- pletFields @'["address", "value", "datum"] swapOutput
 
   let smartInputDatum = pconvert $ presolveDatumData # smartInputF.datum # datums
-  smartUser <- pletC smartInputDatum
+  smartUser <- plet smartInputDatum
 
-  POutputDatumHash ((pfield @"datumHash" #) -> hash) <- pmatchC swapOutputF.datum
-  PJust swapOutputDatum <- pmatchC $ AssocMap.plookup # hash # datums
+  POutputDatumHash ((pfield @"datumHash" #) -> hash) <- pmatch swapOutputF.datum
+  PJust swapOutputDatum <- pmatch $ AssocMap.plookup # hash # datums
   let swapOutDatum = ptryFrom @PMinswapRequestDatum (pto swapOutputDatum) fst
-  swapOutDatF <- pletFieldsC @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] swapOutDatum
-  orderStepF <- pletFieldsC @'["desiredAsset", "minReceive"] swapOutDatF.step
-  desiredAssetF <- pletFieldsC @'["cs", "tn"] orderStepF.desiredAsset
+  swapOutDatF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] swapOutDatum
+  orderStepF <- pletFields @'["desiredAsset", "minReceive"] swapOutDatF.step
+  desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
 
-  pure $
-    pif
-      ( pand'List
-          [ plovelaceValueOf # smartInputF.value - 1_000_000 #== plovelaceValueOf # swapOutputF.value
-          , swapOutDatF.sender #== smartUser
-          , swapOutDatF.receiver #== smartUser
-          , pmatch swapOutDatF.receiverDatumHash $ \case
-              PDJust _ -> pconstant False
-              PDNothing _ -> pconstant True
-          , desiredAssetF.cs #== minCS
-          , desiredAssetF.tn #== minTN
-          , pfromData swapOutDatF.batcherFee #== pconstant 2_000_000
-          , pfromData swapOutDatF.outputAda #== pconstant 2_000_000
-          , swapOutputF.address #== swapAddress
-          -- add some slippage check
-          ]
-      )
-      (pconstant 1)
-      perror
+  pif
+    ( pand'List
+        [ plovelaceValueOf # smartInputF.value - 1_000_000 #== plovelaceValueOf # swapOutputF.value
+        , swapOutDatF.sender #== smartUser
+        , swapOutDatF.receiver #== smartUser
+        , pmatch swapOutDatF.receiverDatumHash $ \case
+            PDJust _ -> pconstant False
+            PDNothing _ -> pconstant True
+        , desiredAssetF.cs #== minCS
+        , desiredAssetF.tn #== minTN
+        , pfromData swapOutDatF.batcherFee #== pconstant 2_000_000
+        , pfromData swapOutDatF.outputAda #== pconstant 2_000_000
+        , swapOutputF.address #== swapAddress
+        -- add some slippage check
+        ]
+    )
+    (pconstant 1)
+    perror
+
+puniqueOrdered :: (PElemConstraint PBuiltinList a) => Term s ((PInteger :--> a) :--> PInteger :--> (PBuiltinList (PAsData PInteger)) :--> (PBuiltinList a))
+puniqueOrdered =
+  phoistAcyclic $
+    let go :: (PElemConstraint PBuiltinList a) => Term s ((PInteger :--> a) :--> PInteger :--> (PBuiltinList (PAsData PInteger)) :--> (PBuiltinList a))
+        go = plam $ \elemAt ->
+          ( pfix #$ plam $ \self uniquenessLabel order ->
+              pelimList
+                ( \x xs ->
+                    let n = 2 #^ (pfromData x)
+                        n' = 2 * n
+                        y = uniquenessLabel + n
+                        output = elemAt # pfromData x
+                     in pif
+                          (uniquenessLabel #% n' #< y #% n')
+                          (pcons # output #$ self # y # xs)
+                          (ptraceError "duplicate index detected")
+                )
+                (pcon PNil)
+                order
+          )
+     in go
 
 smartHandleStakeValidatorW :: Term s (PAddress :--> PStakeValidator)
-smartHandleStakeValidatorW = phoistAcyclic $ plam $ \swapAddress redeemer ctx -> unTermCont $ do
+smartHandleStakeValidatorW = phoistAcyclic $ plam $ \swapAddress redeemer ctx -> P.do
   let red = pconvert @PRouterRedeemer redeemer
-  redF <- pletFieldsC @'["inputIdxs", "outputIdxs"] red
-  ctxF <- pletFieldsC @'["txInfo", "purpose"] ctx
-  infoF <- pletFieldsC @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
-  txInputs <- pletC infoF.inputs
-  txOuts <- pletC infoF.outputs
+  redF <- pletFields @'["inputIdxs", "outputIdxs"] red
+  ctxF <- pletFields @'["txInfo", "purpose"] ctx
+  infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
+  txInputs <- plet infoF.inputs
+  txOuts <- plet infoF.outputs
 
-  let smartInputs :: Term _ (PBuiltinList PTxOut)
-      smartInputs = pmap @PBuiltinList # plam (\i -> pfield @"resolved" # (pelemAt' # pfromData i # txInputs)) # redF.inputIdxs
-      swapOutputs :: Term _ (PBuiltinList PTxOut)
-      swapOutputs = pmap @PBuiltinList # plam (\i -> (pelemAt' # pfromData i # txOuts)) # redF.outputIdxs
+  let smartInputs = puniqueOrdered # plam (\idx -> pfield @"resolved" #$ pelemAt @PBuiltinList # idx # txInputs) # 0 # redF.inputIdxs
+      swapOutputs = puniqueOrdered # plam (\idx -> pelemAt @PBuiltinList # idx # txOuts) # 0 # redF.outputIdxs
       foldCount = pfoldCorrespondingUTxOs infoF.datums swapAddress 0 smartInputs swapOutputs
 
   let scInpCount = pcountScriptInputs # txInputs
       foldChecks =
         pand'List
           [foldCount #== scInpCount] -- possibly add protocol fee payout
-  pure $
-    pif foldChecks (popaque $ pconstant ()) perror
+  pif foldChecks (popaque $ pconstant ()) perror
 
 data PSmartRedeemer (s :: S)
   = PSwapSmart (Term s (PDataRecord '[]))
@@ -417,23 +437,22 @@ instance DerivePlutusType PSmartRedeemer where
 instance PTryFrom PData PSmartRedeemer
 
 smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
-smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> unTermCont $ do
+smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> P.do
   let red = pconvert @PSmartRedeemer redeemer
       dat = pconvert @PAddress datum
-  ctxF <- pletFieldsC @'["txInfo"] ctx
-  pure $
-    pmatch red $ \case
-      PSwapSmart _ ->
-        let stakeCerts = pfield @"wdrl" # ctxF.txInfo
-         in pmatch (AssocMap.plookup # stakeScript # stakeCerts) $ \case
-              PJust _ -> (popaque $ pconstant ())
-              PNothing -> perror
-      PReclaimSmart _ ->
-        pmatch (pfield @"credential" # dat) $ \case
-          PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
-            ( pif
-                (pelem @PBuiltinList # pkh # (pfield @"signatories" # ctxF.txInfo))
-                (popaque $ pconstant ())
-                perror
-            )
-          PScriptCredential _ -> perror -- TODO: is it refundable for a script?
+  ctxF <- pletFields @'["txInfo"] ctx
+  pmatch red $ \case
+    PSwapSmart _ ->
+      let stakeCerts = pfield @"wdrl" # ctxF.txInfo
+       in pmatch (AssocMap.plookup # stakeScript # stakeCerts) $ \case
+            PJust _ -> (popaque $ pconstant ())
+            PNothing -> perror
+    PReclaimSmart _ ->
+      pmatch (pfield @"credential" # dat) $ \case
+        PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
+          ( pif
+              (pelem @PBuiltinList # pkh # (pfield @"signatories" # ctxF.txInfo))
+              (popaque $ pconstant ())
+              perror
+          )
+        PScriptCredential _ -> perror -- TODO: is it refundable for a script?
