@@ -6,7 +6,9 @@
 
 module SmartHandles where
 
-import Conversions
+import PlutusLedgerApi.V1 (Address (..), Credential (..), PubKeyHash (..), ScriptHash, StakingCredential (..))
+import PlutusLedgerApi.V1.Value (CurrencySymbol (..), TokenName (..))
+
 import Plutarch.Api.V1 (PCredential (PPubKeyCredential, PScriptCredential), PDatumHash)
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
 import Plutarch.Api.V1.Value
@@ -14,17 +16,17 @@ import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
-import Plutarch.Extra.Numeric ((#^))
-import Plutarch.Extra.Rational ((#%))
-import Plutarch.Extra.ScriptContext (pfromPDatum, ptryFromInlineDatum)
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import Plutarch.TryFrom (PTryFrom (PTryFromExcess, ptryFrom'))
 import Plutarch.Unsafe
-import PlutusLedgerApi.V1 (Address (..), Credential (..), PubKeyHash (..), ScriptHash, StakingCredential (..))
-import PlutusLedgerApi.V1.Value (CurrencySymbol (..), TokenName (..))
-import Utils
+import "liqwid-plutarch-extra" Plutarch.Extra.Numeric ((#^))
+import "liqwid-plutarch-extra" Plutarch.Extra.Rational ((#%))
+import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext (pfromPDatum, ptryFromInlineDatum)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
+
+import Conversions
+import Utils
 
 -- Smart Beacon @adaToMin
 -- user sends 50 ADA to @adaToMin
@@ -389,7 +391,7 @@ puniqueOrdered =
   phoistAcyclic $
     let go :: (PElemConstraint PBuiltinList a) => Term s ((PInteger :--> a) :--> PInteger :--> (PBuiltinList (PAsData PInteger)) :--> (PBuiltinList a))
         go = plam $ \elemAt ->
-          ( pfix #$ plam $ \self uniquenessLabel order ->
+          ( pfix #$ plam $ \self uniquenessLabel ->
               pelimList
                 ( \x xs ->
                     let n = 2 #^ (pfromData x)
@@ -397,12 +399,11 @@ puniqueOrdered =
                         y = uniquenessLabel + n
                         output = elemAt # pfromData x
                      in pif
-                          (uniquenessLabel #% n' #< y #% n')
+                          ((pmod # uniquenessLabel # n') #< (pmod # y # n'))
                           (pcons # output #$ self # y # xs)
                           (ptraceError "duplicate index detected")
                 )
                 (pcon PNil)
-                order
           )
      in go
 

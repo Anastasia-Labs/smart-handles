@@ -3,9 +3,11 @@ module SmartHandlesSpec (tests) where
 import Plutarch
 import Plutarch.Prelude
 import Plutarch.Test.QuickCheck (TestableTerm (..), fromFailingPPartial, fromPFun)
-import SmartHandles
+
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, shuffle, sublistOf, testProperty)
+
+import SmartHandles
 
 tests :: TestTree
 tests =
@@ -30,10 +32,12 @@ property_puniqueOrdered_successOnNoDuplicates = forAll indexList $ fromPFun $ ch
 property_puniqueOrdered_errorOnDuplicates :: Property
 property_puniqueOrdered_errorOnDuplicates = forAll indexList $ fromFailingPPartial $ check
   where
+    atLeastOneElement [] = [1]
+    atLeastOneElement xs = xs
     indexList :: Gen (TestableTerm (PBuiltinList (PAsData PInteger)))
     indexList = do
       n <- chooseInteger (1, 100)
-      s <- sublistOf [1 .. n]
+      s <- atLeastOneElement <$> sublistOf [1 .. n]
       r <- chooseInt (0, (length s) - 1)
       l <- shuffle ((s !! r) : s)
       return $ TestableTerm $ (pmap # (plam pdata) # pconstant l)
