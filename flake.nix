@@ -69,13 +69,5 @@
           ci.required = [ "all_onchain" ];
         };
 
-      flake.hydraJobs.x86_64-linux = (
-        self.checks.x86_64-linux // self.packages.x86_64-linux
-      );
-
-      flake.hydraJobs.aarch64-darwin = (
-        self.checks.aarch64-darwin // self.packages.aarch64-darwin
-      );
-
     };
 }
