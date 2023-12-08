@@ -36,7 +36,7 @@ build:
 
 .PHONY: test
 test:
-	cabal test --test-show-details=direct
+	cabal test -f development --test-show-details=direct
 
 .PHONY: ci
 ci:

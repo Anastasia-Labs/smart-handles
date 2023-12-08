@@ -1,13 +1,10 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module SmartHandles where
 
-import PlutusLedgerApi.V1 (Address (..), Credential (..), PubKeyHash (..), ScriptHash, StakingCredential (..))
-import PlutusLedgerApi.V1.Value (CurrencySymbol (..), TokenName (..))
+import PlutusLedgerApi.V1 (Address (..), Credential (..), DatumHash, PubKeyHash (..), ScriptHash, StakingCredential (..))
+import PlutusLedgerApi.V1.Value (AssetClass, CurrencySymbol (..), TokenName (..))
+import PlutusTx qualified
 
 import Plutarch.Api.V1 (PCredential (PPubKeyCredential, PScriptCredential), PDatumHash)
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
@@ -16,6 +13,7 @@ import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
+import Plutarch.Lift (DerivePConstantViaBuiltin, PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import Plutarch.TryFrom (PTryFrom (PTryFromExcess, ptryFrom'))
@@ -72,6 +70,13 @@ instance DerivePlutusType PAssetClass where
 
 instance PTryFrom PData PAssetClass
 
+data SmartHandleDatum = SmartHandleDatum
+  { owner :: Address
+  }
+
+PlutusTx.makeLift ''SmartHandleDatum
+PlutusTx.makeIsDataIndexed ''SmartHandleDatum [('SmartHandleDatum, 0)]
+
 data PSmartHandleDatum (s :: S) = PSmartHandleDatum (Term s (PDataRecord '["owner" ':= PAddress]))
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields)
@@ -80,6 +85,28 @@ instance DerivePlutusType PSmartHandleDatum where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PSmartHandleDatum
+
+instance PUnsafeLiftDecl PSmartHandleDatum where type PLifted PSmartHandleDatum = SmartHandleDatum
+deriving via (DerivePConstantViaData SmartHandleDatum PSmartHandleDatum) instance PConstantDecl SmartHandleDatum
+
+data SmartHandleRedeemerSwap = SmartHandleRedeemerSwap
+  { ownIndex :: Integer
+  , routerIndex :: Integer
+  }
+
+PlutusTx.makeLift ''SmartHandleRedeemerSwap
+PlutusTx.makeIsDataIndexed ''SmartHandleRedeemerSwap [('SmartHandleRedeemerSwap, 0)]
+
+data SmartHandleRedeemer
+  = Swap SmartHandleRedeemerSwap
+  | Reclaim
+
+PlutusTx.makeLift ''SmartHandleRedeemer
+PlutusTx.makeIsDataIndexed
+  ''SmartHandleRedeemer
+  [ ('Swap, 0)
+  , ('Reclaim, 1)
+  ]
 
 data PSmartHandleRedeemer (s :: S)
   = PSwap (Term s (PDataRecord '["ownIndex" ':= PInteger, "routerIndex" ':= PInteger]))
@@ -91,6 +118,17 @@ instance DerivePlutusType PSmartHandleRedeemer where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PSmartHandleRedeemer
+
+instance PUnsafeLiftDecl PSmartHandleRedeemer where type PLifted PSmartHandleRedeemer = SmartHandleRedeemer
+deriving via (DerivePConstantViaData SmartHandleRedeemer PSmartHandleRedeemer) instance PConstantDecl SmartHandleRedeemer
+
+data OrderType = OrderType
+  { desiredAsset :: AssetClass
+  , minReceive :: Integer
+  }
+
+PlutusTx.makeLift ''OrderType
+PlutusTx.makeIsDataIndexed ''OrderType [('OrderType, 0)]
 
 data POrderType (s :: S)
   = POrderType
@@ -109,6 +147,21 @@ instance DerivePlutusType POrderType where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData POrderType
+
+instance PUnsafeLiftDecl POrderType where type PLifted POrderType = OrderType
+deriving via (DerivePConstantViaData OrderType POrderType) instance PConstantDecl OrderType
+
+data MinswapRequestDatum = MinswapRequestDatum
+  { sender :: Address
+  , receiver :: Address
+  , receiverDatumHash :: Maybe DatumHash
+  , step :: OrderType
+  , batcherFee :: Integer
+  , outputAda :: Integer
+  }
+
+PlutusTx.makeLift ''MinswapRequestDatum
+PlutusTx.makeIsDataIndexed ''MinswapRequestDatum [('MinswapRequestDatum, 0)]
 
 data PMinswapRequestDatum (s :: S)
   = PMinswapRequestDatum
@@ -131,6 +184,9 @@ instance DerivePlutusType PMinswapRequestDatum where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PMinswapRequestDatum
+
+instance PUnsafeLiftDecl PMinswapRequestDatum where type PLifted PMinswapRequestDatum = MinswapRequestDatum
+deriving via (DerivePConstantViaData MinswapRequestDatum PMinswapRequestDatum) instance PConstantDecl MinswapRequestDatum
 
 data PSmartMetadataDatum (s :: S)
   = PSmartMetadataDatum (Term s (PDataRecord '["metadata" ':= PData, "version" ':= PInteger, "extra" ':= PSmartRouter]))
@@ -202,25 +258,6 @@ instance DerivePlutusType PSmartRouter where
 
 instance PTryFrom PData PSmartRouter
 
-data PSmartConfig (s :: S)
-  = PSmartConfig
-      ( Term
-          s
-          ( PDataRecord
-              '[ "cs" ':= PCurrencySymbol
-               , -- "addr1zxn9efv2f6w82hagxqtn62ju4m293tqvw0uhmdl64ch8uw6j2c79gy9l76sdg0xwhd7r0c0kna0tycz4y5s6mlenh8pq6s3z70"
-                 "swapScript" ':= PAddress
-               ]
-          )
-      )
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields)
-
-instance DerivePlutusType PSmartConfig where
-  type DPTStrat _ = PlutusTypeData
-
-instance PTryFrom PData PSmartConfig
-
 ptryOwnInput :: (PIsListLike list PTxInInfo) => Term s (list PTxInInfo :--> PTxOutRef :--> PTxOut)
 ptryOwnInput = phoistAcyclic $
   plam $ \inputs ownRef ->
@@ -232,17 +269,17 @@ ptryOwnInput = phoistAcyclic $
       (const perror)
       # inputs
 
-psmartHandleValidatorW :: Term s (PSmartConfig :--> PValidator)
-psmartHandleValidatorW = phoistAcyclic $ plam $ \smartConfig dat red ctx ->
+psmartHandleValidatorW :: Term s PValidator
+psmartHandleValidatorW = phoistAcyclic $ plam $ \dat red ctx ->
   let datum = pconvert dat
       redeemer = pconvert red
-   in popaque $ psmartHandleValidator # smartConfig # datum # redeemer # ctx
+   in popaque $ psmartHandleValidator # datum # redeemer # ctx
 
-psmartHandleValidator :: Term s (PSmartConfig :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
-psmartHandleValidator = phoistAcyclic $ plam $ \smartConfig dat red ctx -> pmatch red $ \case
+psmartHandleValidator :: Term s (PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psmartHandleValidator = phoistAcyclic $ plam $ \dat red ctx -> pmatch red $ \case
   PSwap r ->
     pletFields @'["ownIndex", "routerIndex"] r $ \redF ->
-      pswapRouter # smartConfig # dat # redF.ownIndex # redF.routerIndex # ctx
+      pswapRouter # dat # redF.ownIndex # redF.routerIndex # ctx
   PReclaim _ ->
     pmatch (pfield @"credential" # (pfield @"owner" # dat)) $ \case
       PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
@@ -253,9 +290,8 @@ psmartHandleValidator = phoistAcyclic $ plam $ \smartConfig dat red ctx -> pmatc
         )
       _ -> perror
 
-pswapRouter :: Term s (PSmartConfig :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
-pswapRouter = phoistAcyclic $ plam $ \_smartConfig dat ownIndex routerIndex ctx -> P.do
-  -- configF <- pletFieldsC @'["cs", "swapScript"] smartConfig -- TODO: not used!
+pswapRouter :: Term s (PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
+pswapRouter = phoistAcyclic $ plam $ \dat ownIndex routerIndex ctx -> P.do
   oldDatumF <- pletFields @'["owner"] dat
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
@@ -295,6 +331,14 @@ pswapRouter = phoistAcyclic $ plam $ \_smartConfig dat ownIndex routerIndex ctx 
     (pconstant ())
     perror
 
+data RouterRedeemer = RouterRedeemer
+  { inputIdxs :: [Integer]
+  , outputIdxs :: [Integer]
+  }
+
+PlutusTx.makeLift ''RouterRedeemer
+PlutusTx.makeIsDataIndexed ''RouterRedeemer [('RouterRedeemer, 0)]
+
 data PRouterRedeemer (s :: S)
   = PRouterRedeemer
       ( Term
@@ -312,6 +356,9 @@ instance DerivePlutusType PRouterRedeemer where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PRouterRedeemer
+
+instance PUnsafeLiftDecl PRouterRedeemer where type PLifted PRouterRedeemer = RouterRedeemer
+deriving via (DerivePConstantViaData RouterRedeemer PRouterRedeemer) instance PConstantDecl RouterRedeemer
 
 pfoldl2 ::
   (PListLike listA, PListLike listB, PElemConstraint listA a, PElemConstraint listB b) =>
@@ -380,7 +427,7 @@ psmartHandleSuccessor datums swapAddress _foldCount smartInput swapOutput = P.do
         , pfromData swapOutDatF.batcherFee #== pconstant 2_000_000
         , pfromData swapOutDatF.outputAda #== pconstant 2_000_000
         , swapOutputF.address #== swapAddress
-        -- add some slippage check
+        -- TODO: add some slippage check
         ]
     )
     (pconstant 1)
@@ -426,6 +473,17 @@ smartHandleStakeValidatorW = phoistAcyclic $ plam $ \swapAddress redeemer ctx ->
           [foldCount #== scInpCount] -- possibly add protocol fee payout
   pif foldChecks (popaque $ pconstant ()) perror
 
+data SmartRedeemer
+  = SwapSmart
+  | ReclaimSmart
+
+PlutusTx.makeLift ''SmartRedeemer
+PlutusTx.makeIsDataIndexed
+  ''SmartRedeemer
+  [ ('SwapSmart, 0)
+  , ('ReclaimSmart, 1)
+  ]
+
 data PSmartRedeemer (s :: S)
   = PSwapSmart (Term s (PDataRecord '[]))
   | PReclaimSmart (Term s (PDataRecord '[]))
@@ -436,6 +494,9 @@ instance DerivePlutusType PSmartRedeemer where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PSmartRedeemer
+
+instance PUnsafeLiftDecl PSmartRedeemer where type PLifted PSmartRedeemer = SmartRedeemer
+deriving via (DerivePConstantViaData SmartRedeemer PSmartRedeemer) instance PConstantDecl SmartRedeemer
 
 smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
 smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> P.do

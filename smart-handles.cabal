@@ -38,6 +38,7 @@ common lang
 
   default-extensions:
     NoStarIsType
+    AllowAmbiguousTypes
     BangPatterns
     BinaryLiterals
     ConstrainedClassMethods
@@ -89,6 +90,7 @@ common lang
     ScopedTypeVariables
     StandaloneDeriving
     StandaloneKindSignatures
+    TemplateHaskell
     TupleSections
     TypeApplications
     TypeFamilies
@@ -139,6 +141,7 @@ common test-dependencies
 library
   import:          lang, dependencies
   exposed-modules:
+    Compilation
     SmartHandles
     Utils
 
