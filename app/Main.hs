@@ -76,15 +76,15 @@ main = do
   putStrLn "Exporting Plutarch scripts..."
   setSGR [Reset]
 
-  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.plutus" psmartHandleValidatorW
+  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.json" psmartHandleValidatorW
   putStrLn "Exported smart handle validator"
 
-  writePlutusScript "Smart Handle Router" "./compiled/smartHandleRouter.plutus" smartHandleRouteValidatorW
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandleRouter.json" smartHandleRouteValidatorW
   putStrLn "Exported smart handle router validator"
 
-  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.plutus" smartHandleStakeValidatorW
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.json" smartHandleStakeValidatorW
   putStrLn "Exported smart handle stake validator"
 
   setSGR [SetColor Foreground Vivid Green]
-  putStrLn "Done exporting Plutus scripts, have a great day!"
+  putStrLn "Done exporting Plutarch scripts, have a great day!"
   setSGR [Reset]
