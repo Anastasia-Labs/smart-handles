@@ -38,6 +38,7 @@ common lang
 
   default-extensions:
     NoStarIsType
+    AllowAmbiguousTypes
     BangPatterns
     BinaryLiterals
     ConstrainedClassMethods
@@ -89,6 +90,7 @@ common lang
     ScopedTypeVariables
     StandaloneDeriving
     StandaloneKindSignatures
+    TemplateHaskell
     TupleSections
     TypeApplications
     TypeFamilies
@@ -100,41 +102,6 @@ common lang
     OverloadedRecordDot
 
   default-language:   GHC2021
-
-library
-  import:          lang
-  exposed-modules:
-    SmartHandles
-    Utils
-
-  other-modules:   Conversions
-
-  -- Compile
-
-  build-depends:
-    , aeson
-    , base
-    , base16-bytestring
-    , bytestring
-    , cardano-binary
-    , data-default
-    , liqwid-plutarch-extra
-    , plutarch
-    , plutus-core
-    , plutus-ledger-api
-    , plutus-tx
-    , ply-core
-    , ply-plutarch
-    , serialise
-    , text
-
-  hs-source-dirs:  src
-
-  if flag(optimized)
-    hs-source-dirs: src-optimized
-
-  else
-    hs-source-dirs: src-checked
 
 common dependencies
   build-depends:
@@ -157,6 +124,43 @@ common dependencies
     , ply-plutarch
     , serialise
     , text
+
+common test-dependencies
+  build-depends:
+    , hedgehog
+    , hedgehog-quickcheck
+    , plutarch-context-builder
+    , plutarch-quickcheck
+    , plutarch-unit
+    , tasty
+    , tasty-hedgehog
+    , tasty-hunit
+    , tasty-quickcheck
+    , text
+
+library
+  import:          lang, dependencies
+  exposed-modules:
+    Compilation
+    SmartHandles
+    Utils
+
+  other-modules:   Conversions
+  hs-source-dirs:  src
+
+  if flag(optimized)
+    hs-source-dirs: src-optimized
+
+  else
+    hs-source-dirs: src-checked
+
+test-suite smart-handles-test
+  import:         lang, dependencies, test-dependencies
+  type:           exitcode-stdio-1.0
+  build-depends:  smart-handles
+  main-is:        Spec.hs
+  hs-source-dirs: test
+  other-modules:  SmartHandlesSpec
 
 executable smart-handles
   import:         lang, dependencies
