@@ -222,8 +222,8 @@ swapPkh =
       orderCred = "a65ca58a4e9c755fa830173d2a5caed458ac0c73f97db7faae2e7e3b"
    in pconstant orderCred
 
-swapAddress :: Term s PAddress
-swapAddress =
+minSwapAddress :: Term s PAddress
+minSwapAddress =
   let orderCred = "a65ca58a4e9c755fa830173d2a5caed458ac0c73f97db7faae2e7e3b"
       orderStakeCred = PubKeyCredential "52563c5410bff6a0d43ccebb7c37e1f69f5eb260552521adff33b9c2"
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
@@ -269,17 +269,17 @@ ptryOwnInput = phoistAcyclic $
       (const perror)
       # inputs
 
-psmartHandleValidatorW :: Term s PValidator
-psmartHandleValidatorW = phoistAcyclic $ plam $ \dat red ctx ->
+psmartHandleValidatorW :: Term s (PAddress :--> PValidator)
+psmartHandleValidatorW = phoistAcyclic $ plam $ \swapAddress dat red ctx ->
   let datum = pconvert dat
       redeemer = pconvert red
-   in popaque $ psmartHandleValidator # datum # redeemer # ctx
+   in popaque $ psmartHandleValidator # swapAddress # datum # redeemer # ctx
 
-psmartHandleValidator :: Term s (PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
-psmartHandleValidator = phoistAcyclic $ plam $ \dat red ctx -> pmatch red $ \case
+psmartHandleValidator :: Term s (PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psmartHandleValidator = phoistAcyclic $ plam $ \swapAddress dat red ctx -> pmatch red $ \case
   PSwap r ->
     pletFields @'["ownIndex", "routerIndex"] r $ \redF ->
-      pswapRouter # dat # redF.ownIndex # redF.routerIndex # ctx
+      pswapRouter # swapAddress # dat # redF.ownIndex # redF.routerIndex # ctx
   PReclaim _ ->
     pmatch (pfield @"credential" # (pfield @"owner" # dat)) $ \case
       PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
@@ -290,8 +290,8 @@ psmartHandleValidator = phoistAcyclic $ plam $ \dat red ctx -> pmatch red $ \cas
         )
       _ -> perror
 
-pswapRouter :: Term s (PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
-pswapRouter = phoistAcyclic $ plam $ \dat ownIndex routerIndex ctx -> P.do
+pswapRouter :: Term s (PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
+pswapRouter = phoistAcyclic $ plam $ \swapAddress dat ownIndex routerIndex ctx -> P.do
   oldDatumF <- pletFields @'["owner"] dat
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
