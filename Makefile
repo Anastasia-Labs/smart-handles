@@ -35,7 +35,7 @@ test:
 
 .PHONY: ci
 ci:
-	nix flake check -vvv --accept-flake-config --extra-experimental-features ca-derivations
+	nix flake check --accept-flake-config --extra-experimental-features ca-derivations
 
 .PHONY: export
 export:
