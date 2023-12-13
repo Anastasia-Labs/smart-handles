@@ -1,0 +1,10 @@
+name: Clear CI Nix cache
+
+on: [workflow_dispatch]
+jobs:
+  clear-nix-cache:
+    name: Example Job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run `clear-ci-nix-cache`
+        run: make clear-ci-nix-cache
