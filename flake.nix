@@ -8,6 +8,7 @@
     allow-import-from-derivation = "true";
     max-jobs = "auto";
     auto-optimise-store = "true";
+    bash-prompt = "\\[\\e[0;92m\\][\\[\\e[0;92m\\]nix develop:\\[\\e[0;92m\\]\\w\\[\\e[0;92m\\]]\\[\\e[0;92m\\]$ \\[\\e[0m\\]";
   };
 
   inputs = {

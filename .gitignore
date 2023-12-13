@@ -1,10 +1,18 @@
+# env
+
+.direnv
+
 # Git
 
 .pre-commit-config.yaml
 
 # Cabal
 
-dist-newstyle/
+dist-newstyle
+
+# Plutus
+
+*.plutus
 
 # VSCode
 
