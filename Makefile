@@ -34,7 +34,7 @@ test:
 	cabal test -f development --test-show-details=direct
 
 .PHONY: ci
-ci:
+ci: clear-ci-nix-cache
 	nix flake check --accept-flake-config --extra-experimental-features ca-derivations
 
 .PHONY: clear-ci-nix-cache
