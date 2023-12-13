@@ -15,7 +15,7 @@ help:
 
 .PHONY: shell
 shell:
-	nix develop --accept-flake-config
+	nix develop --accept-flake-config --extra-experimental-features ca-derivations
 
 .PHONY: code
 code:
@@ -35,7 +35,7 @@ test:
 
 .PHONY: ci
 ci:
-	nix flake check --accept-flake-config
+	nix flake check --accept-flake-config --extra-experimental-features ca-derivations
 
 .PHONY: export
 export:
