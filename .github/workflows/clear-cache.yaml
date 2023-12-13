@@ -5,6 +5,8 @@ jobs:
   clear-nix-cache:
     name: Example Job
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Run `clear-ci-nix-cache`
         run: make clear-ci-nix-cache
