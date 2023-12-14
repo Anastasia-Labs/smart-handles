@@ -6,7 +6,6 @@ help:
 	@echo "Where <command>:"
 	@echo "  help       -- show this help"
 	@echo "  shell      -- opens a development shell for the smart contract project"
-	@echo "  shell-zsh  -- opens a development zsh shell for the smart contract project"
 	@echo "  code       -- start a vscode instance in the nix development shell"
 	@echo "  clean      -- cabal clean"
 	@echo "  build      -- build the smart contracts"
@@ -17,10 +16,6 @@ help:
 .PHONY: shell
 shell:
 	nix develop --extra-experimental-features ca-derivations
-
-.PHONY: shell-zsh
-shell-zsh:
-	nix develop --extra-experimental-features ca-derivations -c zsh
 
 .PHONY: code
 code:
@@ -41,6 +36,10 @@ test:
 .PHONY: ci
 ci:
 	nix flake check --accept-flake-config --extra-experimental-features ca-derivations
+
+.PHONY: clear-ci-nix-cache
+clear-ci-nix-cache:
+	./clear-ci-nix-cache
 
 .PHONY: export
 export:

@@ -78,7 +78,7 @@ routerScript :: Script
 routerScript = fromRight undefined $ compileTerm $ smartHandleRouteValidatorW
 
 stakingScript :: Script
-stakingScript = fromRight undefined $ compileTerm $ smartHandleStakeValidatorW # swapAddress
+stakingScript = fromRight undefined $ compileTerm $ smartHandleStakeValidatorW # minSwapAddress
 
 stakingCredential :: StakingCredential
 stakingCredential = StakingHash $ ScriptCredential $ scriptHash $ stakingScript
@@ -100,7 +100,7 @@ scriptOutput :: (Builder a) => a
 scriptOutput =
   output $
     mconcat
-      [ address $ plift swapAddress
+      [ address $ plift minSwapAddress
       , withValue (singleton adaSymbol adaToken 9_000_000)
       , withRedeemer SwapSmart
       , withDatum $
@@ -124,6 +124,6 @@ scriptContextWithNegativeIndex =
       ]
 
 stakingValidatorTests :: TestTree
-stakingValidatorTests = tryFromPTerm "Staking validator" (smartHandleStakeValidatorW # swapAddress) $ do
+stakingValidatorTests = tryFromPTerm "Staking validator" (smartHandleStakeValidatorW # minSwapAddress) $ do
   [toData correctRouterRedeemer, toData scriptContextWithNegativeIndex] @> "accepts correct index"
   [toData negativeIndicesRouterRedeemer, toData scriptContextWithNegativeIndex] @!> "does not accept negative index"
