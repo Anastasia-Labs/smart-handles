@@ -15,7 +15,7 @@ help:
 
 .PHONY: shell
 shell:
-	nix develop --extra-experimental-features ca-derivations
+	nix develop --accept-flake-config --extra-experimental-features ca-derivations
 
 .PHONY: code
 code:
