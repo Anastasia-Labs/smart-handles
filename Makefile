@@ -37,10 +37,6 @@ test:
 ci:
 	nix flake check --accept-flake-config --extra-experimental-features ca-derivations
 
-.PHONY: clear-ci-nix-cache
-clear-ci-nix-cache:
-	./clear-ci-nix-cache
-
 .PHONY: export
 export:
 	cabal run smart-handles -f optimized
