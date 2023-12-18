@@ -94,7 +94,7 @@ scriptInput =
       ]
 
 minAssetClass :: AssetClass
-minAssetClass = assetClass "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6" "MIN"
+minAssetClass = assetClass "e16c2dc8ae937e8d3790c7fd7168d7b994621ba14ca11415f39fed72" "MIN"
 
 scriptOutput :: (Builder a) => a
 scriptOutput =
