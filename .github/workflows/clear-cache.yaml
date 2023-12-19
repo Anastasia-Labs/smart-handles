@@ -1,12 +1,25 @@
-name: Clear CI Nix cache
+name: Clear CI cache
 
 on: [workflow_dispatch]
 jobs:
   clear-nix-cache:
-    name: Example Job
+    name: Clear cache on CI
     runs-on: ubuntu-latest
+    permissions:
+      actions: "write"
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Run `clear-ci-nix-cache`
-        run: make clear-ci-nix-cache
+      - name: Delete all github action caches
+        run: |
+          echo "Clearing ${GITHUB_REPOSITORY} nix cache..."
+          echo
+
+          gh api --paginate -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/actions/caches" \
+            | for ID in `jq '.actions_caches[].id'`; \
+              do echo "Deleting $ID"; \
+                 gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/actions/caches/$ID" | echo; done
+
+          echo
+          echo "all done"
