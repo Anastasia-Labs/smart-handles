@@ -54,7 +54,7 @@ data SmartHandleDatum = SmartHandleDatum
   }
 ```
 
-That's all that needs to be done by the user. Post which the routing agents take responsibility of sending this UTxO from the contract address to Minswap's ADA/MIN swap address. They do so by initiating a spending transaction (with a `Swap SmartHandleRedeemerSwap`) and sending the output UTxO (with the correct `MinswapRequestDatum` as below). They can take a 1 ADA routing fee (from the owner) upon building a successful transaction.
+That's all that needs to be done by the user. Post which the routing agents take responsibility of sending this UTxO from the contract address to Minswap's swap address. They do so by initiating a spending transaction (with a `SmartHandleRedeemer`) and sending the output UTxO (with the correct `MinswapRequestDatum` as below). They can take a 1 ADA routing fee (from the owner) upon building a successful transaction.
 
 ```haskell
 data MinswapRequestDatum = MinswapRequestDatum
@@ -67,22 +67,20 @@ data MinswapRequestDatum = MinswapRequestDatum
   }
 
 data SmartHandleRedeemer
-  = Swap SmartHandleRedeemerSwap
+  = Swap
+      { ownIndex :: Integer
+      , routerIndex :: Integer
+      }
   | Reclaim
-
-data SmartHandleRedeemerSwap = SmartHandleRedeemerSwap
-  { ownIndex :: Integer
-  , routerIndex :: Integer
-  }
 ```
 
-The `SmartHandleRedeemerSwap` tells the contract which output UTxO (outputs[ routerIndex ]) is created from the spending of provided script input UTxO (inputs[ ownIndex ]) to facilitate validations. The owner can choose to reclaim his locked funds back (if they haven't been spent yet) by initiating a spending transaction with `Reclaim` redeemer.
+The `Swap` tells the contract which output UTxO (outputs[ routerIndex ]) is created from the spending of provided script input UTxO (inputs[ ownIndex ]) to facilitate validations. The owner can choose to reclaim his locked funds back (if they haven't been spent yet) by initiating a spending transaction with `Reclaim` redeemer.
 
 ```haskell
 psmartHandleValidator :: Term s (PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
 ```
 
-The routing contract (`psmartHandleValidator`, compiled script at `./compiled/smartHandleSimple.json`) mentioned here, is the standalone validator which gets the job done. It takes the Minswap's $ADA/$MIN swap address as a parameter, making it configurable to work for any other asset pair trading at Minswap. However, it has a limitation. It only allows one script input to be spent in a single transaction, severely limiting the routing throughput per transaction.
+The routing contract (`psmartHandleValidator`, compiled script at `./compiled/smartHandleSimple.json`) mentioned here, is the standalone validator (takes Minswap's swap address as a parameter) which gets the job done. However, it has a limitation. It only allows one script input to be spent in a single transaction, severely limiting the routing throughput per transaction.
 
 Allowing more than one script input to be spent within it, could result in a critical vulnerability in the form of [Double Satisfaction Attack](https://plutus.readthedocs.io/en/latest/reference/writing-scripts/common-weaknesses/double-satisfaction.html?highlight=double#unique-outputs). This contract serves as a starting point for understanding and working with Smart Beacons. For those looking to carry out routing of multiple script inputs in a single transaction, the next section provides the required details.
 
@@ -94,7 +92,7 @@ Here a single transaction can fulfill multiple routings, whether all of them are
 smartHandleStakeValidatorW :: Term s (PAddress :--> PStakeValidator)
 ```
 
-The Staking validator (`smartHandleStakeValidatorW`, compiled script at `./compiled/smartHandleStake.json`) takes care of validating all script inputs against their corresponding swap outputs in a given tx. It takes the Minswap's $ADA/$MIN swap address as a parameter, making it configurable to work for any other asset pair trading at Minswap. 
+The Staking validator (`smartHandleStakeValidatorW`, compiled script at `./compiled/smartHandleStake.json`) takes care of validating all script inputs against their corresponding swap outputs in a given tx. It takes Minswap's swap address as a parameter.
 
 This Staking validator's credential is used as a parameter to a Spending Validator (`smartHandleRouteValidatorW`, compiled script at `./compiled/smartHandleRouter.json`), the advanced routing contract which locks the user's UTxOs. Spending validator ensures that the Staking validator is executed in the tx thereby confirming that no script input avoids validation. A successful validation from both spending and staking validator is essentail for spending UTxOs.
 
@@ -223,74 +221,47 @@ make export
 
 ### Using Routing Contract
 
+This section explains how to interact with Basic Routing Contract using [Lucid](https://lucid.spacebudz.io/) based offchain scripts. Please install [Deno](https://deno.land/ "A modern runtime for Javascript & Typescript") before proceeding further.
+
+#### Setup
+
+Move into the offchain scripts directory:
+
+```sh
+cd offchain/
+```
+
+Please configure your preprod wallet details and Blockfrost API Key in `offchain/config.ts` before executing scripts.
+
 #### Sending Swap Order
 
 Inorder to create a swap order at the routing contract, a UTxO needs to be sent to it containing $ADA to be exchanged for $MIN along with a datum of type SmartHandleDatum.
 
-```
+```hs
 data SmartHandleDatum = SmartHandleDatum
   { owner :: Address
   }
 ```
 
-Using [Lucid](https://lucid.spacebudz.io/), a tx can be created as follows:
+Run:
 
-```typescript
-const datum = Data.to(new Constr(0, [ownerAddress]));
-const routingContract: Script = {
-    type: "PlutusV2",
-    script: applyDoubleCborEncoding(compiledCode), // cborHex from smartHandleSimple.json
-  }
-const routingContractAddress = lucid.utils.validatorToAddress(routingContract);
-
-const tx = await lucid
-  .newTx()
-  .payToContract(routingContractAddress, {inline: datum}, {lovelace: BigInt(50_000_000)})
-  .complete();
-
-const signedTx = await tx.sign().complete();
-const txHash = await signedTx.submit();
-await lucid.awaitTx(txHash);
+```sh
+deno run --allow-all create-swap-order.ts
 ```
+
+Note: Script execution may take couple of minutes, as it waits for tx confirmation. Upon successful execution, the script will output a detailed message with a tx hash.
 
 #### Routing Swap Order to Minswap
 
-A routing agent spends a UTxO at routing contract address (the one locked above) by passing a `Swap SmartHandleRedeemerSwap` and sending the output UTxO with the correct `MinswapRequestDatum` to Minswap's ADA/MIN swap address as below:
+A routing agent spends a UTxO at routing contract address (the one locked above) by passing a `Swap` redeemer and sending the output UTxO with the correct `MinswapRequestDatum` to Minswap's swap address.
 
-```typescript
-const swapDatum = Data.to(
-  new Constr(0, 
-        [
-          ownerAddress,                                      // sender :: Address
-          ownerAddress,                                      // receiver
-          (new Constr 1 []),                                 // receiverDatumHash :: Maybe DatumHash
-          (new Constr 0                                      // step :: OrderType
-            [Constr 0 [$MIN_POLICY_ID, "MIN"], minReceive]), // { desiredAsset :: AssetClass, minReceive :: Integer }
-          2_000_000,                                         // batcherFee :: Integer
-          2_000_000                                          //outputAda :: Integer
-        ]));
-const swapDatumHash = lucid.utils.datumToHash(swapDatum);
+Run:
 
-// Swap ( SmartHandleRedeemerSwap { ownIndex, routerIndex } )
-const routerRedeemer = Data.to(new Constr(0, [new Constr(0, [0, 0])]));
-
-const routingContract: Script = {
-    type: "PlutusV2",
-    script: applyDoubleCborEncoding(compiledCode), // cborHex from smartHandleSimple.json
-  }
-
-const tx = await lucid
-  .newTx()
-  .collectFrom(scriptUTxO, routerRedeemer)
-  .attachSpendingValidator(routingContract)
-  .payToContract(swapAddress, {hash: swapDatumHash}, {lovelace: BigInt(49_000_000)})
-  .payToAddress(routingAgentAddress, {lovelace: BigInt(1_000_000)}) // routing fees
-  .complete();
-
-const signedTx = await tx.sign().complete();
-const txHash = await signedTx.submit();
-await lucid.awaitTx(txHash);
+```sh
+deno run --allow-all route-swap-order.ts
 ```
+
+Note: Script execution may take couple of minutes, as it waits for tx confirmation. Upon successful execution, the script will output a detailed message with a tx hash.
 
 ## License
 

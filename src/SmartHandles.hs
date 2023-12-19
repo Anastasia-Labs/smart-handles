@@ -89,16 +89,11 @@ instance PTryFrom PData PSmartHandleDatum
 instance PUnsafeLiftDecl PSmartHandleDatum where type PLifted PSmartHandleDatum = SmartHandleDatum
 deriving via (DerivePConstantViaData SmartHandleDatum PSmartHandleDatum) instance PConstantDecl SmartHandleDatum
 
-data SmartHandleRedeemerSwap = SmartHandleRedeemerSwap
-  { ownIndex :: Integer
-  , routerIndex :: Integer
-  }
-
-PlutusTx.makeLift ''SmartHandleRedeemerSwap
-PlutusTx.makeIsDataIndexed ''SmartHandleRedeemerSwap [('SmartHandleRedeemerSwap, 0)]
-
 data SmartHandleRedeemer
-  = Swap SmartHandleRedeemerSwap
+  = Swap
+      { ownIndex :: Integer
+      , routerIndex :: Integer
+      }
   | Reclaim
 
 PlutusTx.makeLift ''SmartHandleRedeemer
@@ -126,6 +121,19 @@ data OrderType = OrderType
   { desiredAsset :: AssetClass
   , minReceive :: Integer
   }
+
+-- TODO: Extend OrderType to facilitate below
+--  | OrderTypeOut
+--     { desiredAsset :: AssetClass
+--     , expectedReceived :: Integer
+--     }
+--  | OrderTypeDeposit
+--     { minimumLP :: Integer
+--     }
+--  | OrderTypeWithdraw
+--     { minimumAssetA :: Integer
+--     , minimumAssetAB :: Integer
+--     }
 
 PlutusTx.makeLift ''OrderType
 PlutusTx.makeIsDataIndexed ''OrderType [('OrderType, 0)]
@@ -204,10 +212,11 @@ adaToMinTN =
       tn = "$adaToMin"
    in pconstant tn
 
+-- $MIN Currency Symbol on Preprod
 minCS :: Term s PCurrencySymbol
 minCS =
   let cs :: CurrencySymbol
-      cs = "29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83d267170c6"
+      cs = "e16c2dc8ae937e8d3790c7fd7168d7b994621ba14ca11415f39fed72"
    in pconstant cs
 
 minTN :: Term s PTokenName
@@ -271,8 +280,8 @@ ptryOwnInput = phoistAcyclic $
 
 psmartHandleValidatorW :: Term s (PAddress :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \swapAddress dat red ctx ->
-  let datum = pconvert dat
-      redeemer = pconvert red
+  let datum = pconvert @PSmartHandleDatum dat
+      redeemer = pconvert @PSmartHandleRedeemer red
    in popaque $ psmartHandleValidator # swapAddress # datum # redeemer # ctx
 
 psmartHandleValidator :: Term s (PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
@@ -313,19 +322,22 @@ pswapRouter = phoistAcyclic $ plam $ \swapAddress dat ownIndex routerIndex ctx -
   let routerFee = Value.psingleton # padaSymbol # padaToken # (-1_000_000)
   pif
     ( pand'List
-        [ ownRef #== indexedInput.outRef
-        , outDatumF.sender #== oldDatumF.owner
-        , outDatumF.receiver #== oldDatumF.owner
-        , pmatch outDatumF.receiverDatumHash $ \case
-            PDJust _ -> pconstant False
-            PDNothing _ -> pconstant True
-        , desiredAssetF.cs #== minCS
-        , desiredAssetF.tn #== minTN
-        , pfromData outDatumF.batcherFee #== pconstant 2_000_000
-        , pfromData outDatumF.outputAda #== pconstant 2_000_000
-        , swapOutputF.address #== swapAddress
-        , pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> routerFee)
-        , pcountInputsAtScript # ownValHash # infoF.inputs #== 1
+        [ ptraceIfFalse "Incorrect indexed input" (ownRef #== indexedInput.outRef)
+        , ptraceIfFalse "Incorrect Swap Sender" (outDatumF.sender #== oldDatumF.owner)
+        , ptraceIfFalse "Incorrect Swap Receiver" (outDatumF.receiver #== oldDatumF.owner)
+        , ptraceIfFalse
+            "Incorrect ReceiverDatumHash"
+            ( pmatch outDatumF.receiverDatumHash $ \case
+                PDJust _ -> pconstant False
+                PDNothing _ -> pconstant True
+            )
+        , ptraceIfFalse "Incorrect $MIN Policy Id" (desiredAssetF.cs #== minCS)
+        , ptraceIfFalse "Incorrect $MIN Token Name" (desiredAssetF.tn #== minTN)
+        , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
+        , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
+        , ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
+        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> routerFee))
+        , ptraceIfFalse "Multiple script inputs spent" (pcountInputsAtScript # ownValHash # infoF.inputs #== 1)
         ]
     )
     (pconstant ())
@@ -416,17 +428,20 @@ psmartHandleSuccessor datums swapAddress _foldCount smartInput swapOutput = P.do
 
   pif
     ( pand'List
-        [ plovelaceValueOf # smartInputF.value - 1_000_000 #== plovelaceValueOf # swapOutputF.value
-        , swapOutDatF.sender #== smartUser
-        , swapOutDatF.receiver #== smartUser
-        , pmatch swapOutDatF.receiverDatumHash $ \case
-            PDJust _ -> pconstant False
-            PDNothing _ -> pconstant True
-        , desiredAssetF.cs #== minCS
-        , desiredAssetF.tn #== minTN
-        , pfromData swapOutDatF.batcherFee #== pconstant 2_000_000
-        , pfromData swapOutDatF.outputAda #== pconstant 2_000_000
-        , swapOutputF.address #== swapAddress
+        [ ptraceIfFalse "Incorrect Swap Output Value" (plovelaceValueOf # smartInputF.value - 1_000_000 #== plovelaceValueOf # swapOutputF.value)
+        , ptraceIfFalse "Incorrect Swap Sender" (swapOutDatF.sender #== smartUser)
+        , ptraceIfFalse "Incorrect Swap Receiver" (swapOutDatF.receiver #== smartUser)
+        , ptraceIfFalse
+            "Incorrect ReceiverDatumHash"
+            ( pmatch swapOutDatF.receiverDatumHash $ \case
+                PDJust _ -> pconstant False
+                PDNothing _ -> pconstant True
+            )
+        , ptraceIfFalse "Incorrect $MIN Policy Id" (desiredAssetF.cs #== minCS)
+        , ptraceIfFalse "Incorrect $MIN Token Name" (desiredAssetF.tn #== minTN)
+        , ptraceIfFalse "Incorrect Batcher Fee" (pfromData swapOutDatF.batcherFee #== pconstant 2_000_000)
+        , ptraceIfFalse "Incorrect Output ADA" (pfromData swapOutDatF.outputAda #== pconstant 2_000_000)
+        , ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
         -- TODO: add some slippage check
         ]
     )
