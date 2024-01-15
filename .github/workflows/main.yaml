@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "master"
+      - "develop"
+  pull_request:
+    branches:
+      - "master"
+      - "develop"
+  workflow_dispatch: {}
+
+jobs:
+  lints:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v26
+
+      - name: Cache Nix
+        uses: actions/cache@v3
+        with:
+          key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+          restore-keys: nix-${{ runner.os }}-
+          path: /nix
+
+      - name: Run `nix flake check`
+        run: make ci

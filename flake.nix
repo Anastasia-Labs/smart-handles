@@ -8,6 +8,7 @@
     allow-import-from-derivation = "true";
     max-jobs = "auto";
     auto-optimise-store = "true";
+    bash-prompt = "\\[\\e[0;92m\\][\\[\\e[0;92m\\]nix develop:\\[\\e[0;92m\\]\\w\\[\\e[0;92m\\]]\\[\\e[0;92m\\]$ \\[\\e[0m\\]";
   };
 
   inputs = {
@@ -20,7 +21,6 @@
     };
 
     liqwid-libs.url = "github:Liqwid-Labs/liqwid-libs";
-    plutus-simple-model.url = "github:mlabs-haskell/plutus-simple-model";
   };
 
   outputs = inputs@{ self, flake-parts, ... }:
@@ -65,15 +65,10 @@
               "${inputs.liqwid-libs}/liqwid-script-export"
               "${inputs.liqwid-libs.inputs.ply}/ply-core"
               "${inputs.liqwid-libs.inputs.ply}/ply-plutarch"
-              "${inputs.plutus-simple-model}/cardano-simple"
-              "${inputs.plutus-simple-model}/psm"
             ];
           };
           ci.required = [ "all_onchain" ];
         };
 
-      flake.hydraJobs.x86_64-linux = (
-        self.checks.x86_64-linux // self.packages.x86_64-linux
-      );
     };
 }

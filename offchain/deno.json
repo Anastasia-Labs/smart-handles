@@ -1,0 +1,7 @@
+{
+    "imports": {
+        "lucid": "npm:lucid-cardano@0.10.7",
+        "minswap": "npm:@minswap/sdk@0.2.2-beta",
+        "blockfrost": "npm:@blockfrost/blockfrost-js@^5.3.1"
+    }
+}

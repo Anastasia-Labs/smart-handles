@@ -2,7 +2,6 @@
 
 module Main (main) where
 
-import Cardano.Binary qualified as CBOR
 import Data.Aeson (KeyValue ((.=)), object)
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Bifunctor (
@@ -18,10 +17,18 @@ import Data.Text (
   pack,
  )
 import Data.Text.Encoding qualified as Text
+import System.Console.ANSI (Color (..), ColorIntensity (..), ConsoleLayer (..), SGR (..), setSGR)
+
+import Cardano.Binary qualified as CBOR
+import PlutusLedgerApi.V1.Address (scriptHashAddress)
+import PlutusLedgerApi.V2 (
+  Data,
+  ExBudget,
+ )
+
 import Plutarch (
   Config (Config),
   TracingMode (DoTracing),
-  compile,
  )
 import Plutarch.Api.V1.Value (padaSymbol)
 import Plutarch.Evaluate (
@@ -29,19 +36,15 @@ import Plutarch.Evaluate (
  )
 import Plutarch.Prelude
 import Plutarch.Script (Script, serialiseScript)
-import PlutusLedgerApi.V1.Address (scriptHashAddress)
-import PlutusLedgerApi.V2 (
-  Data,
-  ExBudget,
- )
 import Ply.Plutarch (
   writeTypedScript,
  )
-import SmartHandles
-import System.Console.ANSI (Color (..), ColorIntensity (..), ConsoleLayer (..), SGR (..), setSGR)
 import "liqwid-plutarch-extra" Plutarch.Extra.Script (
   applyArguments,
  )
+
+import Compilation
+import SmartHandles
 
 encodeSerialiseCBOR :: Script -> Text
 encodeSerialiseCBOR = Text.decodeUtf8 . Base16.encode . CBOR.serialize' . serialiseScript
@@ -51,7 +54,7 @@ evalT x = evalWithArgsT x []
 
 evalWithArgsT :: ClosedTerm a -> [Data] -> Either Text (Script, ExBudget, [Text])
 evalWithArgsT x args = do
-  cmp <- compile (Config DoTracing) x
+  cmp <- compileTerm x
   let (escr, budg, trc) = evalScript $ applyArguments cmp args
   scr <- first (pack . show) escr
   pure (scr, budg, trc)
@@ -71,11 +74,17 @@ main :: IO ()
 main = do
   setSGR [SetColor Foreground Vivid Blue]
   putStrLn "Exporting Plutarch scripts..."
-
   setSGR [Reset]
-  writePlutusScript "Smart Handle Router" "./compiled/smartHandle.plutus" psmartHandleValidatorW
-  putStrLn "Exported smart contract handle router"
+
+  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.json" psmartHandleValidatorW
+  putStrLn "Exported smart handle validator"
+
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandleRouter.json" smartHandleRouteValidatorW
+  putStrLn "Exported smart handle router validator"
+
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.json" smartHandleStakeValidatorW
+  putStrLn "Exported smart handle stake validator"
 
   setSGR [SetColor Foreground Vivid Green]
-  putStrLn "Done exporting Plutus scripts, have a great day!"
+  putStrLn "Done exporting Plutarch scripts, have a great day!"
   setSGR [Reset]
