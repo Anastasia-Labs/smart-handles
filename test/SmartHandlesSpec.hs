@@ -16,8 +16,10 @@ import Plutarch.Test.QuickCheck (TestableTerm (..), fromFailingPPartial, fromPFu
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, shuffle, sublistOf, testProperty)
 
+import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
-import SmartHandles
+import MinSwap.AdaToMin
+import StakingValidator (RouterRedeemer (..), puniqueOrdered)
 
 tests :: TestTree
 tests = testGroup "Smart handles" [uniqueOrderedTests, stakingValidatorTests]
@@ -78,7 +80,7 @@ routerScript :: Script
 routerScript = fromRight undefined $ compileTerm $ smartHandleRouteValidatorW
 
 stakingScript :: Script
-stakingScript = fromRight undefined $ compileTerm $ smartHandleStakeValidatorW # minSwapAddress
+stakingScript = fromRight undefined $ compileTerm $ pstakeValidator # minSwapAddress
 
 stakingCredential :: StakingCredential
 stakingCredential = StakingHash $ ScriptCredential $ scriptHash $ stakingScript
@@ -124,6 +126,6 @@ scriptContextWithNegativeIndex =
       ]
 
 stakingValidatorTests :: TestTree
-stakingValidatorTests = tryFromPTerm "Staking validator" (smartHandleStakeValidatorW # minSwapAddress) $ do
+stakingValidatorTests = tryFromPTerm "Staking validator" (pstakeValidator # minSwapAddress) $ do
   [toData correctRouterRedeemer, toData scriptContextWithNegativeIndex] @> "accepts correct index"
   [toData negativeIndicesRouterRedeemer, toData scriptContextWithNegativeIndex] @!> "does not accept negative index"

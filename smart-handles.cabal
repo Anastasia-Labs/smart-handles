@@ -141,8 +141,12 @@ common test-dependencies
 library
   import:          lang, dependencies
   exposed-modules:
+    BatchValidator
     Compilation
-    SmartHandles
+    Constants
+    MinSwap.AdaToMin
+    SingleValidator
+    StakingValidator
     Utils
 
   other-modules:   Conversions
