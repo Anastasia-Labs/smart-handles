@@ -5,10 +5,20 @@ module Utils where
 import Plutarch.Api.V1.AssocMap (plookup)
 import Plutarch.Api.V2
 import Plutarch.Bool
+import Plutarch.DataRepr
 import Plutarch.Maybe (pfromJust)
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
+
+data PAssetClass (s :: S) = PAssetClass (Term s (PDataRecord '["cs" ':= PCurrencySymbol, "tn" ':= PTokenName]))
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PIsData, PDataFields)
+
+instance DerivePlutusType PAssetClass where
+  type DPTStrat _ = PlutusTypeData
+
+instance PTryFrom PData PAssetClass
 
 pexpectJust :: Term s r -> Term s (PMaybe a) -> TermCont @r s (Term s a)
 pexpectJust escape ma = tcont $ \f -> pmatch ma $ \case
@@ -112,3 +122,19 @@ presolveDatum = phoistAcyclic $ plam $ \outputDatum datums ->
 
 presolveDatumData :: Term s (POutputDatum :--> PMap any PDatumHash PDatum :--> PData)
 presolveDatumData = phoistAcyclic $ plam $ \outputDatum datums -> pto $ presolveDatum # outputDatum # datums
+
+pfoldl2 ::
+  (PListLike listA, PListLike listB, PElemConstraint listA a, PElemConstraint listB b) =>
+  Term s ((acc :--> a :--> b :--> acc) :--> acc :--> listA a :--> listB b :--> acc)
+pfoldl2 =
+  phoistAcyclic $ plam $ \func ->
+    pfix #$ plam $ \self acc la lb ->
+      pelimList
+        ( \a as ->
+            pelimList
+              (\b bs -> self # (func # acc # a # b) # as # bs)
+              perror
+              lb
+        )
+        (pif (pnull # lb) acc perror)
+        la
