@@ -137,7 +137,7 @@ puniqueOrdered =
           )
      in go
 
-smartHandleStakeValidatorW :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PRouterRedeemer :--> PStakeValidator)
+smartHandleStakeValidatorW :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PStakeValidator)
 smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress redeemer ctx -> P.do
   let red = pconvert @PRouterRedeemer redeemer
   redF <- pletFields @'["inputIdxs", "outputIdxs"] red
