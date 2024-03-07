@@ -49,7 +49,7 @@ smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer 
             PJust _ -> (popaque $ pconstant ())
             PNothing -> perror
     PReclaimSmart _ ->
-      pmatch (pfield @"credential" # dat) $ \case
+      pmatch (pfield @"credential" # (pfield @"owner" # dat)) $ \case
         PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
           ( pif
               (pelem @PBuiltinList # pkh # (pfield @"signatories" # ctxF.txInfo))
