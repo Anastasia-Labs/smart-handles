@@ -4,7 +4,7 @@ import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
-import Plutarch.Api.V2 (PAddress, PStakingCredential, PValidator)
+import Plutarch.Api.V2 (PStakingCredential, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
