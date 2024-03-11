@@ -4,13 +4,14 @@ import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
-import Plutarch.Api.V2 (PAddress, PStakingCredential, PValidator)
+import Plutarch.Api.V2 (PStakingCredential, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 
 import Conversions
+import SingleValidator (PSmartHandleDatum)
 
 data SmartRedeemer
   = SwapSmart
@@ -40,7 +41,7 @@ deriving via (DerivePConstantViaData SmartRedeemer PSmartRedeemer) instance PCon
 smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
 smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> P.do
   let red = pconvert @PSmartRedeemer redeemer
-      dat = pconvert @PAddress datum
+      dat = pconvert @PSmartHandleDatum datum
   ctxF <- pletFields @'["txInfo"] ctx
   pmatch red $ \case
     PSwapSmart _ ->
@@ -49,7 +50,7 @@ smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer 
             PJust _ -> (popaque $ pconstant ())
             PNothing -> perror
     PReclaimSmart _ ->
-      pmatch (pfield @"credential" # dat) $ \case
+      pmatch (pfield @"credential" # (pfield @"owner" # dat)) $ \case
         PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
           ( pif
               (pelem @PBuiltinList # pkh # (pfield @"signatories" # ctxF.txInfo))
