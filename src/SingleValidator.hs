@@ -15,6 +15,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 import Constants
 import Conversions
 import Utils
+import Plutarch.Unsafe (punsafeCoerce)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
@@ -123,7 +124,7 @@ ptryOwnInput = phoistAcyclic $
 psmartHandleValidatorW :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx ->
   let datum = pconvert @PSmartHandleDatum dat
-      redeemer = pconvert @PSmartHandleRedeemer red
+      redeemer = punsafeCoerce @_ @_ @PSmartHandleRedeemer red
    in popaque $ psmartHandleValidator # validateFn # swapAddress # datum # redeemer # ctx
 
 psmartHandleValidator :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
