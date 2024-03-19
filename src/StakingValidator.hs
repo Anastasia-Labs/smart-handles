@@ -23,10 +23,10 @@ import "liqwid-plutarch-extra" Plutarch.Extra.Rational ((#%))
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext (pfromPDatum, ptryFromInlineDatum)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
-import SingleValidator (PSmartHandleDatum (..))
 import BatchValidator (PSmartRedeemer (..))
 import Constants (routerFeeAsNegativeLovelace)
 import Conversions
+import SingleValidator (PSmartHandleDatum (..))
 import Utils
 
 pcountScriptInputs :: Term s (PBuiltinList PTxInInfo :--> PInteger)

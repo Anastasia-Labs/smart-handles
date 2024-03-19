@@ -19,6 +19,7 @@ import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, s
 import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
 import MinSwap.AdaToMin
+import SingleValidator (SmartHandleDatum (..))
 import StakingValidator (RouterRedeemer (..), puniqueOrdered)
 
 tests :: TestTree
@@ -92,7 +93,7 @@ scriptInput =
       [ script $ scriptHash routerScript
       , withValue (singleton adaSymbol adaToken 10_000_000)
       , withRedeemer SwapSmart
-      , withDatum $ Address alice Nothing
+      , withDatum $ SmartHandleDatum $ Address alice Nothing
       ]
 
 minAssetClass :: AssetClass

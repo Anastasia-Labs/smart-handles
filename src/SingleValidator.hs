@@ -14,8 +14,8 @@ import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
 import Constants
 import Conversions
-import Utils
 import Plutarch.Unsafe (punsafeCoerce)
+import Utils
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
