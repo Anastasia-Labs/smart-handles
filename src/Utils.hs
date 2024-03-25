@@ -8,6 +8,7 @@ import Plutarch.Bool
 import Plutarch.DataRepr
 import Plutarch.Maybe (pfromJust)
 import Plutarch.Prelude
+import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
@@ -138,3 +139,9 @@ pfoldl2 =
         )
         (pif (pnull # lb) acc perror)
         la
+
+pconvertChecked :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
+pconvertChecked x = ptryFrom x fst
+
+pconvertUnsafe :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
+pconvertUnsafe = punsafeCoerce

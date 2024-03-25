@@ -11,7 +11,6 @@ import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
-import Conversions
 import SingleValidator (PSmartHandleDatum, PSmartHandleRedeemer, psmartHandleValidator)
 import StakingValidator (smartHandleStakeValidatorW)
 import Utils
@@ -133,7 +132,7 @@ minSwapAddress =
 
 validateFn :: Term s (PAddress :--> PDatum :--> PBool)
 validateFn = plam $ \owner outputDatum -> P.do
-  let outDatum = pconvert @PMinswapRequestDatum (pto outputDatum)
+  let outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
   outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
   orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
   desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
