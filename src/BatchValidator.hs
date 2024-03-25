@@ -10,8 +10,8 @@ import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 
-import Conversions
 import SingleValidator (PSmartHandleDatum)
+import Utils (pconvertChecked, pconvertUnsafe)
 
 data SmartRedeemer
   = SwapSmart
@@ -40,8 +40,8 @@ deriving via (DerivePConstantViaData SmartRedeemer PSmartRedeemer) instance PCon
 
 smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
 smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> P.do
-  let red = pconvert @PSmartRedeemer redeemer
-      dat = pconvert @PSmartHandleDatum datum
+  let red = pconvertUnsafe @PSmartRedeemer redeemer
+      dat = pconvertChecked @PSmartHandleDatum datum
   ctxF <- pletFields @'["txInfo"] ctx
   pmatch red $ \case
     PSwapSmart _ ->
