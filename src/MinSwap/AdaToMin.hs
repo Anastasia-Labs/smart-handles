@@ -130,8 +130,8 @@ minSwapAddress =
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
    in pconstant orderAddr
 
-validateFn :: Term s (PAddress :--> PDatum :--> PBool)
-validateFn = plam $ \owner outputDatum -> P.do
+validateFn :: Term s (PAddress :--> PCurrencySymbol :--> PTokenName :--> PDatum :--> PBool)
+validateFn = plam $ \owner desiredAssetSymbol desiredAssetTokenName outputDatum -> P.do
   let outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
   outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
   orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
@@ -145,8 +145,8 @@ validateFn = plam $ \owner outputDatum -> P.do
             PDJust _ -> pconstant False
             PDNothing _ -> pconstant True
         )
-    , ptraceIfFalse "Incorrect $MIN Policy Id" (desiredAssetF.cs #== minCS)
-    , ptraceIfFalse "Incorrect $MIN Token Name" (desiredAssetF.tn #== minTN)
+    , ptraceIfFalse "Incorrect $MIN Policy Id" (desiredAssetF.cs #== desiredAssetSymbol)
+    , ptraceIfFalse "Incorrect $MIN Token Name" (desiredAssetF.tn #== desiredAssetTokenName)
     , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
     , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
     ]

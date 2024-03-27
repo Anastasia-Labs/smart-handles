@@ -2,7 +2,7 @@ module SmartHandlesSpec (tests) where
 
 import Data.Either (fromRight)
 
-import PlutusLedgerApi.V1.Value (AssetClass, assetClass)
+import PlutusLedgerApi.V1.Value (AssetClass (..), assetClass)
 import PlutusLedgerApi.V2 (Address (..), Credential (..), ScriptContext, StakingCredential (..), adaSymbol, adaToken, singleton)
 import PlutusTx (toData)
 
@@ -86,6 +86,9 @@ stakingScript = fromRight undefined $ compileTerm $ pstakeValidator # minSwapAdd
 stakingCredential :: StakingCredential
 stakingCredential = StakingHash $ ScriptCredential $ scriptHash $ stakingScript
 
+minAssetClass :: AssetClass
+minAssetClass = assetClass "e16c2dc8ae937e8d3790c7fd7168d7b994621ba14ca11415f39fed72" "MIN"
+
 scriptInput :: (Builder a) => a
 scriptInput =
   input $
@@ -93,11 +96,12 @@ scriptInput =
       [ script $ scriptHash routerScript
       , withValue (singleton adaSymbol adaToken 10_000_000)
       , withRedeemer SwapSmart
-      , withDatum $ SmartHandleDatum $ Address alice Nothing
+      , withDatum $
+          SmartHandleDatum
+            (Address alice Nothing)
+            (fst $ unAssetClass minAssetClass)
+            (snd $ unAssetClass minAssetClass)
       ]
-
-minAssetClass :: AssetClass
-minAssetClass = assetClass "e16c2dc8ae937e8d3790c7fd7168d7b994621ba14ca11415f39fed72" "MIN"
 
 scriptOutput :: (Builder a) => a
 scriptOutput =
