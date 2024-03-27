@@ -145,8 +145,8 @@ validateFn = plam $ \owner desiredAssetSymbol desiredAssetTokenName outputDatum 
             PDJust _ -> pconstant False
             PDNothing _ -> pconstant True
         )
-    , ptraceIfFalse "Incorrect $MIN Policy Id" (desiredAssetF.cs #== desiredAssetSymbol)
-    , ptraceIfFalse "Incorrect $MIN Token Name" (desiredAssetF.tn #== desiredAssetTokenName)
+    , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== desiredAssetSymbol)
+    , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== desiredAssetTokenName)
     , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
     , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
     ]
