@@ -4,7 +4,7 @@ import Data.Either (fromRight)
 
 import PlutusLedgerApi.V1.Value (AssetClass (..), assetClass)
 import PlutusLedgerApi.V2 (Address (..), Credential (..), ScriptContext, StakingCredential (..), adaSymbol, adaToken, singleton)
-import PlutusTx (toData)
+import PlutusTx (toBuiltinData, toData)
 
 import Plutarch
 import Plutarch.Api.V2 (scriptHash)
@@ -99,8 +99,11 @@ scriptInput =
       , withDatum $
           SmartHandleDatum
             (Address alice Nothing)
-            (fst $ unAssetClass minAssetClass)
-            (snd $ unAssetClass minAssetClass)
+            ( toBuiltinData $
+                MinswapRequestInfo
+                  (fst $ unAssetClass minAssetClass)
+                  (snd $ unAssetClass minAssetClass)
+            )
       ]
 
 scriptOutput :: (Builder a) => a

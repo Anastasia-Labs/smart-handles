@@ -98,6 +98,35 @@ instance PTryFrom PData PMinswapRequestDatum
 instance PUnsafeLiftDecl PMinswapRequestDatum where type PLifted PMinswapRequestDatum = MinswapRequestDatum
 deriving via (DerivePConstantViaData MinswapRequestDatum PMinswapRequestDatum) instance PConstantDecl MinswapRequestDatum
 
+data MinswapRequestInfo = MinswapRequestInfo
+  { desiredAssetSymbol :: CurrencySymbol
+  , desiredAssetTokenName :: TokenName
+  }
+
+PlutusTx.makeLift ''MinswapRequestInfo
+PlutusTx.makeIsDataIndexed ''MinswapRequestInfo [('MinswapRequestInfo, 0)]
+
+data PMinswapRequestInfo (s :: S)
+  = PMinswapRequestInfo
+      ( Term
+          s
+          ( PDataRecord
+              '[ "desiredAssetSymbol" ':= PCurrencySymbol
+               , "desiredAssetTokenName" ':= PTokenName
+               ]
+          )
+      )
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PIsData, PDataFields)
+
+instance DerivePlutusType PMinswapRequestInfo where
+  type DPTStrat _ = PlutusTypeData
+
+instance PTryFrom PData PMinswapRequestInfo
+
+instance PUnsafeLiftDecl PMinswapRequestInfo where type PLifted PMinswapRequestInfo = MinswapRequestInfo
+deriving via (DerivePConstantViaData MinswapRequestInfo PMinswapRequestInfo) instance PConstantDecl MinswapRequestInfo
+
 adaToMinTN :: Term s PTokenName
 adaToMinTN =
   let tn :: TokenName
@@ -130,9 +159,11 @@ minSwapAddress =
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
    in pconstant orderAddr
 
-validateFn :: Term s (PAddress :--> PCurrencySymbol :--> PTokenName :--> PDatum :--> PBool)
-validateFn = plam $ \owner desiredAssetSymbol desiredAssetTokenName outputDatum -> P.do
-  let outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
+validateFn :: Term s (PAddress :--> PData :--> PDatum :--> PBool)
+validateFn = plam $ \owner extraInfoData outputDatum -> P.do
+  let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
+      outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
+  extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName"] extraInfo
   outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
   orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
   desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
@@ -145,8 +176,8 @@ validateFn = plam $ \owner desiredAssetSymbol desiredAssetTokenName outputDatum 
             PDJust _ -> pconstant False
             PDNothing _ -> pconstant True
         )
-    , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== desiredAssetSymbol)
-    , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== desiredAssetTokenName)
+    , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== extraInfoF.desiredAssetSymbol)
+    , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== extraInfoF.desiredAssetTokenName)
     , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
     , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
     ]
