@@ -24,7 +24,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext (pfromPDatum, ptryFr
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
 import BatchValidator (PSmartRedeemer (..))
-import Constants (routerFeeAsNegativeLovelace)
+import Constants (routerFeeAsNegativeValue)
 import SingleValidator (PSmartHandleDatum (..))
 import Utils
 
@@ -108,7 +108,7 @@ psmartHandleSuccessor validateFn datums swapAddress smartInput swapOutput = P.do
   pif
     ( pand'List
         [ ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
-        , ptraceIfFalse "Incorrect Swap Output Value" (plovelaceValueOf # smartInputF.value + routerFeeAsNegativeLovelace #== plovelaceValueOf # swapOutputF.value)
+        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive smartInputF.value <> routerFeeAsNegativeValue))
         , validateFn # datF.owner # datF.desiredAssetSymbol # datF.desiredAssetTokenName # swapOutputDatum
         ]
     )
