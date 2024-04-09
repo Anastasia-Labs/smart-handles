@@ -149,7 +149,6 @@ library
     StakingValidator
     Utils
 
-  other-modules:   Conversions
   hs-source-dirs:  src
 
   if flag(optimized)

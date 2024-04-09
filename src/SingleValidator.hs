@@ -13,7 +13,6 @@ import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
 import Constants
-import Conversions
 import Utils
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
@@ -33,12 +32,22 @@ pcountInputsAtScript =
 
 data SmartHandleDatum = SmartHandleDatum
   { owner :: Address
+  , extraInfo :: PlutusTx.BuiltinData
   }
 
 PlutusTx.makeLift ''SmartHandleDatum
 PlutusTx.makeIsDataIndexed ''SmartHandleDatum [('SmartHandleDatum, 0)]
 
-data PSmartHandleDatum (s :: S) = PSmartHandleDatum (Term s (PDataRecord '["owner" ':= PAddress]))
+data PSmartHandleDatum (s :: S)
+  = PSmartHandleDatum
+      ( Term
+          s
+          ( PDataRecord
+              '[ "owner" ':= PAddress
+               , "extraInfo" ':= PData
+               ]
+          )
+      )
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields)
 
@@ -120,13 +129,13 @@ ptryOwnInput = phoistAcyclic $
       (const perror)
       # inputs
 
-psmartHandleValidatorW :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PValidator)
+psmartHandleValidatorW :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx ->
-  let datum = pconvert @PSmartHandleDatum dat
-      redeemer = pconvert @PSmartHandleRedeemer red
+  let datum = pconvertChecked @PSmartHandleDatum dat
+      redeemer = pconvertUnsafe @PSmartHandleRedeemer red
    in popaque $ psmartHandleValidator # validateFn # swapAddress # datum # redeemer # ctx
 
-psmartHandleValidator :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psmartHandleValidator :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
 psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx -> pmatch red $ \case
   PSwap r ->
     pletFields @'["ownIndex", "routerIndex"] r $ \redF ->
@@ -141,9 +150,9 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red c
         )
       _ -> perror
 
-pswapRouter :: Term s ((PAddress :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
+pswapRouter :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
 pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex routerIndex ctx -> P.do
-  let ownerAddress = pfield @"owner" # dat
+  datF <- pletFields @'["owner", "extraInfo"] dat
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
   PSpending ((pfield @"_0" #) -> ownRef) <- pmatch ctxF.purpose
@@ -161,7 +170,7 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
         , ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
         , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> routerFeeAsNegativeValue))
         , ptraceIfFalse "Multiple script inputs spent" (pcountInputsAtScript # ownValHash # infoF.inputs #== 1)
-        , validateFn # ownerAddress # outputDatum
+        , validateFn # datF.owner # datF.extraInfo # outputDatum
         ]
     )
     (pconstant ())
