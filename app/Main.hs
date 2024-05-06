@@ -19,7 +19,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.Script (applyArguments)
 
 import BatchValidator (smartHandleRouteValidatorW)
 import Compilation
-import MinSwap.AdaToMin
+import Specialized.Minswap
 
 encodeSerialiseCBOR :: Script -> Text
 encodeSerialiseCBOR = Text.decodeUtf8 . Base16.encode . CBOR.serialize' . serialiseScript

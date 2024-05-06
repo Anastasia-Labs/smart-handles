@@ -18,8 +18,8 @@ import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, s
 
 import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
-import MinSwap.AdaToMin
 import SingleValidator (SmartHandleDatum (..))
+import Specialized.Minswap
 import StakingValidator (RouterRedeemer (..), puniqueOrdered)
 
 tests :: TestTree

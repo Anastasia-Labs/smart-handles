@@ -1,4 +1,4 @@
-module MinSwap.AdaToMin where
+module Specialized.Minswap where
 
 import PlutusLedgerApi.V1.Value (AssetClass)
 import PlutusLedgerApi.V2 (Address (..), Credential (..), CurrencySymbol, DatumHash, PubKeyHash, StakingCredential (..), TokenName)
