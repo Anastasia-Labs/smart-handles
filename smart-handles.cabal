@@ -144,8 +144,8 @@ library
     BatchValidator
     Compilation
     Constants
-    MinSwap.AdaToMin
     SingleValidator
+    Specialized.Minswap
     StakingValidator
     Utils
 
