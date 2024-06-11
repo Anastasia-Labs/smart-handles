@@ -159,8 +159,8 @@ minSwapAddress =
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
    in pconstant orderAddr
 
-validateFn :: Term s (PAddress :--> PData :--> PDatum :--> PBool)
-validateFn = plam $ \owner extraInfoData outputDatum -> P.do
+validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool)
+validateFn = plam $ \mOwner extraInfoData outputDatum -> P.do
   let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
       outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
   extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName"] extraInfo
@@ -168,8 +168,13 @@ validateFn = plam $ \owner extraInfoData outputDatum -> P.do
   orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
   desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
   pand'List
-    [ ptraceIfFalse "Incorrect Swap Sender" (outDatumF.sender #== owner)
-    , ptraceIfFalse "Incorrect Swap Receiver" (outDatumF.receiver #== owner)
+    [ pmatch mOwner $ \case
+        PDJust ((pfield @"_0" #) -> owner) ->
+          pand'List
+            [ ptraceIfFalse "Incorrect Swap Sender" (outDatumF.sender #== owner)
+            , ptraceIfFalse "Incorrect Swap Receiver" (outDatumF.receiver #== owner)
+            ]
+        PDNothing _ -> pconstant True
     , ptraceIfFalse
         "Incorrect ReceiverDatumHash"
         ( pmatch outDatumF.receiverDatumHash $ \case

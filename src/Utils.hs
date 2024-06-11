@@ -3,9 +3,11 @@
 module Utils where
 
 import Plutarch.Api.V1.AssocMap (plookup)
+import Plutarch.Api.V1.Value qualified as V
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
+import Plutarch.Extra.Ord (pmin)
 import Plutarch.Maybe (pfromJust)
 import Plutarch.Prelude
 import Plutarch.Unsafe (punsafeCoerce)
@@ -145,3 +147,6 @@ pconvertChecked x = ptryFrom x fst
 
 pconvertUnsafe :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
 pconvertUnsafe = punsafeCoerce
+
+feeToNegativeValue :: Term s (PInteger :--> PValue 'Sorted 'NonZero)
+feeToNegativeValue = plam $ \fee -> V.psingleton # V.padaSymbol # V.padaToken # (pmin # 0 # negate fee)

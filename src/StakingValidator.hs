@@ -24,7 +24,6 @@ import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext (pfromPDatum, ptryFr
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
 import BatchValidator (PSmartRedeemer (..))
-import Constants (routerFeeAsNegativeValue)
 import SingleValidator (PSmartHandleDatum (..))
 import Utils
 
@@ -73,7 +72,7 @@ instance PUnsafeLiftDecl PRouterRedeemer where type PLifted PRouterRedeemer = Ro
 deriving via (DerivePConstantViaData RouterRedeemer PRouterRedeemer) instance PConstantDecl RouterRedeemer
 
 pfoldCorrespondingUTxOs ::
-  Term s (PAddress :--> PData :--> PDatum :--> PBool) ->
+  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool) ->
   Term s (PMap any PDatumHash PDatum) ->
   Term s PAddress ->
   Term s PInteger ->
@@ -91,7 +90,7 @@ pfoldCorrespondingUTxOs validateFn datMap swapAddress acc la lb =
     # lb
 
 psmartHandleSuccessor ::
-  Term s (PAddress :--> PData :--> PDatum :--> PBool) ->
+  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool) ->
   Term s (PMap any PDatumHash PDatum) ->
   Term s PAddress ->
   Term s PTxOut ->
@@ -102,14 +101,14 @@ psmartHandleSuccessor validateFn datums swapAddress smartInput swapOutput = P.do
   swapOutputF <- pletFields @'["address", "value", "datum"] swapOutput
 
   let smartInputDatum = pconvertChecked @PSmartHandleDatum $ presolveDatumData # smartInputF.datum # datums
-  datF <- pletFields @'["owner", "extraInfo"] smartInputDatum
+  datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] smartInputDatum
   let swapOutputDatum = presolveDatum # swapOutputF.datum # datums
 
   pif
     ( pand'List
         [ ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
-        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive smartInputF.value <> routerFeeAsNegativeValue))
-        , validateFn # datF.owner # datF.extraInfo # swapOutputDatum
+        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive smartInputF.value <> (feeToNegativeValue # datF.routerFee)))
+        , validateFn # datF.mOwner # datF.extraInfo # swapOutputDatum
         ]
     )
     (pconstant 1)
@@ -136,7 +135,7 @@ puniqueOrdered =
           )
      in go
 
-smartHandleStakeValidatorW :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PStakeValidator)
+smartHandleStakeValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PStakeValidator)
 smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress redeemer ctx -> P.do
   let red = pconvertUnsafe @PRouterRedeemer redeemer
   redF <- pletFields @'["inputIdxs", "outputIdxs"] red

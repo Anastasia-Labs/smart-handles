@@ -98,7 +98,8 @@ scriptInput =
       , withRedeemer SwapSmart
       , withDatum $
           SmartHandleDatum
-            (Address alice Nothing)
+            (Just $ Address alice Nothing)
+            1_000_000
             ( toBuiltinData $
                 MinswapRequestInfo
                   (fst $ unAssetClass minAssetClass)

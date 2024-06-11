@@ -1,18 +1,17 @@
 module SingleValidator where
 
-import PlutusLedgerApi.V2 (Address (..))
+import PlutusLedgerApi.V2 (Address)
 import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.Value (pforgetPositive)
-import Plutarch.Api.V2 (PAddress, PDatum, PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
+import Plutarch.Api.V2 (PAddress, PDatum, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
-import Constants
 import Utils
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
@@ -31,7 +30,8 @@ pcountInputsAtScript =
      in go # 0
 
 data SmartHandleDatum = SmartHandleDatum
-  { owner :: Address
+  { mOwner :: Maybe Address
+  , routerFee :: Integer
   , extraInfo :: PlutusTx.BuiltinData
   }
 
@@ -43,7 +43,8 @@ data PSmartHandleDatum (s :: S)
       ( Term
           s
           ( PDataRecord
-              '[ "owner" ':= PAddress
+              '[ "mOwner" ':= PMaybeData PAddress
+               , "routerFee" ':= PInteger
                , "extraInfo" ':= PData
                ]
           )
@@ -129,30 +130,33 @@ ptryOwnInput = phoistAcyclic $
       (const perror)
       # inputs
 
-psmartHandleValidatorW :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PValidator)
+psmartHandleValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx ->
   let datum = pconvertChecked @PSmartHandleDatum dat
       redeemer = pconvertUnsafe @PSmartHandleRedeemer red
    in popaque $ psmartHandleValidator # validateFn # swapAddress # datum # redeemer # ctx
 
-psmartHandleValidator :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psmartHandleValidator :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
 psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx -> pmatch red $ \case
   PSwap r ->
     pletFields @'["ownIndex", "routerIndex"] r $ \redF ->
       pswapRouter # validateFn # swapAddress # dat # redF.ownIndex # redF.routerIndex # ctx
   PReclaim _ ->
-    pmatch (pfield @"credential" # (pfield @"owner" # dat)) $ \case
-      PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
-        ( pif
-            (pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx)))
-            (pconstant ())
-            perror
-        )
-      _ -> perror
+    pmatch (pfield @"mOwner" # dat) $ \case
+      PDJust ((pfield @"_0" #) -> owner) ->
+        pmatch (pfield @"credential" # owner) $ \case
+          PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
+            ( pif
+                (pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx)))
+                (pconstant ())
+                perror
+            )
+          _ -> perror
+      PDNothing _ -> perror
 
-pswapRouter :: Term s ((PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
+pswapRouter :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
 pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex routerIndex ctx -> P.do
-  datF <- pletFields @'["owner", "extraInfo"] dat
+  datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
   PSpending ((pfield @"_0" #) -> ownRef) <- pmatch ctxF.purpose
@@ -168,9 +172,9 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
     ( pand'List
         [ ptraceIfFalse "Incorrect indexed input" (ownRef #== indexedInput.outRef)
         , ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
-        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> routerFeeAsNegativeValue))
+        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> (feeToNegativeValue # datF.routerFee)))
         , ptraceIfFalse "Multiple script inputs spent" (pcountInputsAtScript # ownValHash # infoF.inputs #== 1)
-        , validateFn # datF.owner # datF.extraInfo # outputDatum
+        , validateFn # datF.mOwner # datF.extraInfo # outputDatum
         ]
     )
     (pconstant ())
