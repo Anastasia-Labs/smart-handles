@@ -104,6 +104,7 @@ scriptInput =
                 MinswapRequestInfo
                   (fst $ unAssetClass minAssetClass)
                   (snd $ unAssetClass minAssetClass)
+                  Nothing
             )
       ]
 

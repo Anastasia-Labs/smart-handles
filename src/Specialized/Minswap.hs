@@ -101,6 +101,7 @@ deriving via (DerivePConstantViaData MinswapRequestDatum PMinswapRequestDatum) i
 data MinswapRequestInfo = MinswapRequestInfo
   { desiredAssetSymbol :: CurrencySymbol
   , desiredAssetTokenName :: TokenName
+  , receiverDatumHash :: Maybe DatumHash
   }
 
 PlutusTx.makeLift ''MinswapRequestInfo
@@ -113,6 +114,7 @@ data PMinswapRequestInfo (s :: S)
           ( PDataRecord
               '[ "desiredAssetSymbol" ':= PCurrencySymbol
                , "desiredAssetTokenName" ':= PTokenName
+               , "receiverDatumHash" ':= PMaybeData (PAsData PDatumHash)
                ]
           )
       )
@@ -163,7 +165,7 @@ validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool)
 validateFn = plam $ \mOwner extraInfoData outputDatum -> P.do
   let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
       outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
-  extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName"] extraInfo
+  extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash"] extraInfo
   outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
   orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
   desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
@@ -175,12 +177,7 @@ validateFn = plam $ \mOwner extraInfoData outputDatum -> P.do
             , ptraceIfFalse "Incorrect Swap Receiver" (outDatumF.receiver #== owner)
             ]
         PDNothing _ -> pconstant True
-    , ptraceIfFalse
-        "Incorrect ReceiverDatumHash"
-        ( pmatch outDatumF.receiverDatumHash $ \case
-            PDJust _ -> pconstant False
-            PDNothing _ -> pconstant True
-        )
+    , ptraceIfFalse "Incorrect ReceiverDatumHash" (outDatumF.receiverDatumHash #== extraInfoF.receiverDatumHash)
     , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== extraInfoF.desiredAssetSymbol)
     , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== extraInfoF.desiredAssetTokenName)
     , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
