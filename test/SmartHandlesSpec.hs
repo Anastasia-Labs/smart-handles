@@ -105,6 +105,7 @@ scriptInput =
                   (fst $ unAssetClass minAssetClass)
                   (snd $ unAssetClass minAssetClass)
                   Nothing
+                  10
             )
       ]
 

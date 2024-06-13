@@ -102,6 +102,7 @@ data MinswapRequestInfo = MinswapRequestInfo
   { desiredAssetSymbol :: CurrencySymbol
   , desiredAssetTokenName :: TokenName
   , receiverDatumHash :: Maybe DatumHash
+  , minimumReceive :: Integer
   }
 
 PlutusTx.makeLift ''MinswapRequestInfo
@@ -115,6 +116,7 @@ data PMinswapRequestInfo (s :: S)
               '[ "desiredAssetSymbol" ':= PCurrencySymbol
                , "desiredAssetTokenName" ':= PTokenName
                , "receiverDatumHash" ':= PMaybeData (PAsData PDatumHash)
+               , "minimumReceive" ':= PInteger
                ]
           )
       )
@@ -165,7 +167,7 @@ validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool)
 validateFn = plam $ \mOwner extraInfoData outputDatum -> P.do
   let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
       outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
-  extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash"] extraInfo
+  extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash", "minimumReceive"] extraInfo
   outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
   orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
   desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
@@ -180,6 +182,7 @@ validateFn = plam $ \mOwner extraInfoData outputDatum -> P.do
     , ptraceIfFalse "Incorrect ReceiverDatumHash" (outDatumF.receiverDatumHash #== extraInfoF.receiverDatumHash)
     , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== extraInfoF.desiredAssetSymbol)
     , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== extraInfoF.desiredAssetTokenName)
+    , ptraceIfFalse "Incorrect Minimum Receive" (orderStepF.minReceive #== extraInfoF.minimumReceive)
     , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
     , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
     ]
