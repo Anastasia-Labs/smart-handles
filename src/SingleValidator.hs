@@ -4,7 +4,6 @@ import PlutusLedgerApi.V2 (Address)
 import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
-import Plutarch.Api.V1.Value (pforgetPositive)
 import Plutarch.Api.V2 (PAddress, PDatum, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
@@ -12,7 +11,9 @@ import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
-import Utils
+import Constants (routerFeeAsNegativeValue)
+import Plutarch.Builtin (PIsData (pdataImpl))
+import Utils (pand'List, pconvertChecked, pconvertUnsafe, pfeeToNegativeValue, presolveDatum, psignedByOwner, pvalueHasChangedBy)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
@@ -29,17 +30,30 @@ pcountInputsAtScript =
             n
      in go # 0
 
-data SmartHandleDatum = SmartHandleDatum
-  { mOwner :: Maybe Address
-  , routerFee :: Integer
-  , extraInfo :: PlutusTx.BuiltinData
-  }
+data SmartHandleDatum
+  = Simple Address -- <-- owner
+  | Advanced (Maybe Address) Integer PlutusTx.BuiltinData
+
+--           ^-------------^ ^-----^ ^------------------^
+--               mOwner     routerFee     extraInfo
 
 PlutusTx.makeLift ''SmartHandleDatum
-PlutusTx.makeIsDataIndexed ''SmartHandleDatum [('SmartHandleDatum, 0)]
+PlutusTx.makeIsDataIndexed
+  ''SmartHandleDatum
+  [ ('Simple, 0)
+  , ('Advanced, 1)
+  ]
 
 data PSmartHandleDatum (s :: S)
-  = PSmartHandleDatum
+  = PSimple
+      ( Term
+          s
+          ( PDataRecord
+              '[ "owner" ':= PAddress
+               ]
+          )
+      )
+  | PAdvanced
       ( Term
           s
           ( PDataRecord
@@ -50,7 +64,7 @@ data PSmartHandleDatum (s :: S)
           )
       )
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields)
+  deriving anyclass (PlutusType, PIsData)
 
 instance DerivePlutusType PSmartHandleDatum where
   type DPTStrat _ = PlutusTypeData
@@ -142,21 +156,17 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red c
     pletFields @'["ownIndex", "routerIndex"] r $ \redF ->
       pswapRouter # validateFn # swapAddress # dat # redF.ownIndex # redF.routerIndex # ctx
   PReclaim _ ->
-    pmatch (pfield @"mOwner" # dat) $ \case
-      PDJust ((pfield @"_0" #) -> owner) ->
-        pmatch (pfield @"credential" # owner) $ \case
-          PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
-            ( pif
-                (pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx)))
-                (pconstant ())
-                perror
-            )
-          _ -> perror
-      PDNothing _ -> perror
+    pmatch dat $ \case
+      PSimple ((pfield @"owner" #) -> owner) ->
+        psignedByOwner # ctx # owner
+      PAdvanced ((pfield @"mOwner" #) -> mOwner) -> P.do
+        pmatch mOwner $ \case
+          PDJust ((pfield @"_0" #) -> owner) ->
+            psignedByOwner # ctx # owner
+          PDNothing _ -> perror
 
 pswapRouter :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
 pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex routerIndex ctx -> P.do
-  datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
   PSpending ((pfield @"_0" #) -> ownRef) <- pmatch ctxF.purpose
@@ -172,9 +182,19 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
     ( pand'List
         [ ptraceIfFalse "Incorrect indexed input" (ownRef #== indexedInput.outRef)
         , ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
-        , ptraceIfFalse "Incorrect Swap Output Value" (pforgetPositive swapOutputF.value #== (pforgetPositive ownInputF.value <> (feeToNegativeValue # datF.routerFee)))
         , ptraceIfFalse "Multiple script inputs spent" (pcountInputsAtScript # ownValHash # infoF.inputs #== 1)
-        , validateFn # datF.mOwner # datF.extraInfo # outputDatum
+        , pmatch dat $ \case
+            PSimple ((pfield @"owner" #) -> owner) ->
+              pand'List
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # pdataImpl (pcon PUnit) # outputDatum
+                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedBy # ownInputF.value # swapOutputF.value # routerFeeAsNegativeValue)
+                ]
+            PAdvanced dat' -> P.do
+              datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat'
+              pand'List
+                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum
+                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedBy # ownInputF.value # swapOutputF.value # (pfeeToNegativeValue # datF.routerFee))
+                ]
         ]
     )
     (pconstant ())

@@ -2,7 +2,6 @@ module BatchValidator where
 
 import PlutusTx qualified
 
-import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
 import Plutarch.Api.V2 (PMaybeData (..), PStakingCredential, PValidator)
 import Plutarch.DataRepr
@@ -10,8 +9,8 @@ import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 
-import SingleValidator (PSmartHandleDatum)
-import Utils (pconvertChecked, pconvertUnsafe)
+import SingleValidator (PSmartHandleDatum (PAdvanced, PSimple))
+import Utils (pconvertChecked, pconvertUnsafe, psignedByOwner)
 
 data SmartRedeemer
   = SwapSmart
@@ -50,14 +49,11 @@ smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer 
             PJust _ -> (popaque $ pconstant ())
             PNothing -> perror
     PReclaimSmart _ ->
-      pmatch (pfield @"mOwner" # dat) $ \case
-        PDJust ((pfield @"_0" #) -> owner) ->
-          pmatch (pfield @"credential" # owner) $ \case
-            PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
-              ( pif
-                  (pelem @PBuiltinList # pkh # (pfield @"signatories" # ctxF.txInfo))
-                  (popaque $ pconstant ())
-                  perror
-              )
-            PScriptCredential _ -> perror -- TODO: is it refundable for a script?
-        PDNothing _ -> perror
+      pmatch dat $ \case
+        PSimple ((pfield @"owner" #) -> owner) ->
+          popaque $ psignedByOwner # ctx # owner
+        PAdvanced ((pfield @"mOwner" #) -> mOwner) -> P.do
+          pmatch mOwner $ \case
+            PDJust ((pfield @"_0" #) -> owner) ->
+              popaque $ psignedByOwner # ctx # owner
+            PDNothing _ -> perror

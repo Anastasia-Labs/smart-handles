@@ -97,7 +97,7 @@ scriptInput =
       , withValue (singleton adaSymbol adaToken 10_000_000)
       , withRedeemer SwapSmart
       , withDatum $
-          SmartHandleDatum
+          Advanced
             (Just $ Address alice Nothing)
             1_000_000
             ( toBuiltinData $

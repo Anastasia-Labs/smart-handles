@@ -2,14 +2,15 @@
 
 module Utils where
 
+import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.AssocMap (plookup)
-import Plutarch.Api.V1.Value qualified as V
+import Plutarch.Api.V1.Value (padaSymbol, padaToken, pforgetPositive, psingleton)
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
 import Plutarch.Extra.Ord (pmin)
 import Plutarch.Maybe (pfromJust)
-import Plutarch.Prelude
+import Plutarch.Prelude hiding (psingleton)
 import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
@@ -148,5 +149,20 @@ pconvertChecked x = ptryFrom x fst
 pconvertUnsafe :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
 pconvertUnsafe = punsafeCoerce
 
-feeToNegativeValue :: Term s (PInteger :--> PValue 'Sorted 'NonZero)
-feeToNegativeValue = plam $ \fee -> V.psingleton # V.padaSymbol # V.padaToken # (pmin # 0 # negate fee)
+pfeeToNegativeValue :: Term s (PInteger :--> PValue 'Sorted 'NonZero)
+pfeeToNegativeValue = plam $ \fee -> psingleton # padaSymbol # padaToken # (pmin # 0 # negate fee)
+
+psignedByOwner :: Term s (PScriptContext :--> PAddress :--> PUnit)
+psignedByOwner = plam $ \ctx owner ->
+  pmatch (pfield @"credential" # owner) $ \case
+    PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
+      ( pif
+          (pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx)))
+          (pconstant ())
+          perror
+      )
+    _ -> perror
+
+pvalueHasChangedBy :: Term s (PValue 'Sorted 'Positive :--> PValue 'Sorted 'Positive :--> PValue 'Sorted 'NonZero :--> PBool)
+pvalueHasChangedBy = plam $ \inVal outVal change ->
+  pforgetPositive outVal #== (pforgetPositive inVal <> change)
