@@ -8,12 +8,13 @@ import Plutarch.Api.V2 (PAddress, PDatum, PMaybeData (..), PScriptContext, PScri
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
+import Plutarch.Num (PNum (pnegate))
 import Plutarch.Prelude
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
-import Constants (routerFeeAsNegativeValue)
+import Constants (routerFeeAsNegativeLovelace)
 import Plutarch.Builtin (PIsData (pdataImpl))
-import Utils (pand'List, pconvertChecked, pconvertUnsafe, pfeeToNegativeValue, presolveDatum, psignedByOwner, pvalueHasChangedBy)
+import Utils (pand'List, pconvertChecked, pconvertUnsafe, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
@@ -187,13 +188,13 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
                 [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # pdataImpl (pcon PUnit) # outputDatum
-                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedBy # ownInputF.value # swapOutputF.value # routerFeeAsNegativeValue)
+                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat'
               pand'List
                 [ validateFn # datF.mOwner # datF.extraInfo # outputDatum
-                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedBy # ownInputF.value # swapOutputF.value # (pfeeToNegativeValue # datF.routerFee))
+                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # (pnegate # datF.routerFee))
                 ]
         ]
     )

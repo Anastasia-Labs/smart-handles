@@ -8,7 +8,6 @@ import Plutarch.Api.V1.Value (padaSymbol, padaToken, pforgetPositive, psingleton
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
-import Plutarch.Extra.Ord (pmin)
 import Plutarch.Maybe (pfromJust)
 import Plutarch.Prelude hiding (psingleton)
 import Plutarch.Unsafe (punsafeCoerce)
@@ -149,9 +148,6 @@ pconvertChecked x = ptryFrom x fst
 pconvertUnsafe :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
 pconvertUnsafe = punsafeCoerce
 
-pfeeToNegativeValue :: Term s (PInteger :--> PValue 'Sorted 'NonZero)
-pfeeToNegativeValue = plam $ \fee -> psingleton # padaSymbol # padaToken # (pmin # 0 # negate fee)
-
 psignedByOwner :: Term s (PScriptContext :--> PAddress :--> PUnit)
 psignedByOwner = plam $ \ctx owner ->
   pmatch (pfield @"credential" # owner) $ \case
@@ -163,6 +159,9 @@ psignedByOwner = plam $ \ctx owner ->
       )
     _ -> perror
 
-pvalueHasChangedBy :: Term s (PValue 'Sorted 'Positive :--> PValue 'Sorted 'Positive :--> PValue 'Sorted 'NonZero :--> PBool)
-pvalueHasChangedBy = plam $ \inVal outVal change ->
-  pforgetPositive outVal #== (pforgetPositive inVal <> change)
+pvalueHasChangedByLovelaces :: Term s (PValue 'Sorted 'Positive :--> PValue 'Sorted 'Positive :--> PInteger :--> PBool)
+pvalueHasChangedByLovelaces = plam $ \inVal outVal change ->
+  pif
+    (change #== 0)
+    (outVal #== inVal)
+    (pforgetPositive outVal #== (pforgetPositive inVal <> (psingleton # padaSymbol # padaToken # change)))

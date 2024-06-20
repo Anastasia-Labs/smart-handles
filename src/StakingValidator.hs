@@ -15,6 +15,7 @@ import Plutarch.Bool
 import Plutarch.DataRepr
 import Plutarch.Lift (DerivePConstantViaBuiltin, PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
+import Plutarch.Num (PNum (pnegate))
 import Plutarch.Prelude
 import Plutarch.TryFrom (PTryFrom (PTryFromExcess, ptryFrom'))
 import Plutarch.Unsafe
@@ -24,7 +25,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext (pfromPDatum, ptryFr
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
 import BatchValidator (PSmartRedeemer (..))
-import Constants (routerFeeAsNegativeValue)
+import Constants (routerFeeAsNegativeLovelace)
 import Plutarch.Builtin (PIsData (pdataImpl))
 import SingleValidator (PSmartHandleDatum (..))
 import Utils
@@ -112,13 +113,13 @@ psmartHandleSuccessor validateFn datums swapAddress smartInput swapOutput = P.do
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
                 [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # pdataImpl (pcon PUnit) # swapOutputDatum
-                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedBy # smartInputF.value # swapOutputF.value # routerFeeAsNegativeValue)
+                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # swapOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat'
               pand'List
                 [ validateFn # datF.mOwner # datF.extraInfo # swapOutputDatum
-                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedBy # smartInputF.value # swapOutputF.value # (pfeeToNegativeValue # datF.routerFee))
+                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # swapOutputF.value # (pnegate # datF.routerFee))
                 ]
         ]
     )
