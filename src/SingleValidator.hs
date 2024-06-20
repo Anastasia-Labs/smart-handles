@@ -145,13 +145,13 @@ ptryOwnInput = phoistAcyclic $
       (const perror)
       # inputs
 
-psmartHandleValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PMaybeData PScriptContext :--> PBool) :--> PAddress :--> PValidator)
+psmartHandleValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PScriptContext :--> PBool) :--> PAddress :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx ->
   let datum = pconvertChecked @PSmartHandleDatum dat
       redeemer = pconvertUnsafe @PSmartHandleRedeemer red
    in popaque $ psmartHandleValidator # validateFn # swapAddress # datum # redeemer # ctx
 
-psmartHandleValidator :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PMaybeData PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psmartHandleValidator :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
 psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx -> pmatch red $ \case
   PSwap r ->
     pletFields @'["ownIndex", "routerIndex"] r $ \redF ->
@@ -166,7 +166,7 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red c
             psignedByOwner # ctx # owner
           PDNothing _ -> perror
 
-pswapRouter :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PMaybeData PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
+pswapRouter :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PScriptContext :--> PUnit)
 pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex routerIndex ctx -> P.do
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
@@ -187,13 +187,13 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
         , pmatch dat $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # pdataImpl (pcon PUnit) # outputDatum # pcon (PDNothing pdnil)
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # pdataImpl (pcon PUnit) # outputDatum # ctx
                 , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat'
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # pcon (PDJust $ pdcons # pdata ctx # pdnil)
+                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # ctx
                 , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # (pnegate # datF.routerFee))
                 ]
         ]
