@@ -163,8 +163,8 @@ minSwapAddress =
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
    in pconstant orderAddr
 
-validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool)
-validateFn = plam $ \mOwner extraInfoData outputDatum -> P.do
+validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PMaybeData PScriptContext :--> PBool)
+validateFn = plam $ \mOwner extraInfoData outputDatum _ -> P.do
   let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
       outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
   extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash", "minimumReceive"] extraInfo
