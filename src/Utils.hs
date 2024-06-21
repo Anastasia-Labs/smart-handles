@@ -126,17 +126,22 @@ presolveDatum = phoistAcyclic $ plam $ \outputDatum datums ->
 presolveDatumData :: Term s (POutputDatum :--> PMap any PDatumHash PDatum :--> PData)
 presolveDatumData = phoistAcyclic $ plam $ \outputDatum datums -> pto $ presolveDatum # outputDatum # datums
 
-pfoldl2 ::
-  (PListLike listA, PListLike listB, PElemConstraint listA a, PElemConstraint listB b) =>
-  Term s ((acc :--> a :--> b :--> acc) :--> acc :--> listA a :--> listB b :--> acc)
-pfoldl2 =
+pfoldl3 ::
+  (PListLike listA, PListLike listB, PListLike listC, PElemConstraint listA a, PElemConstraint listB b, PElemConstraint listC c) =>
+  Term s ((acc :--> a :--> b :--> c :--> acc) :--> acc :--> listA a :--> listB b :--> listC c :--> acc)
+pfoldl3 =
   phoistAcyclic $ plam $ \func ->
-    pfix #$ plam $ \self acc la lb ->
+    pfix #$ plam $ \self acc la lb lc ->
       pelimList
         ( \a as ->
             pelimList
-              (\b bs -> self # (func # acc # a # b) # as # bs)
-              perror
+              ( \b bs ->
+                  pelimList
+                    (\c cs -> self # (func # acc # a # b # c) # as # bs # cs)
+                    perror
+                    lc
+              )
+              (pif (pnull # lc) acc perror)
               lb
         )
         (pif (pnull # lb) acc perror)

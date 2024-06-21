@@ -4,6 +4,7 @@ import PlutusLedgerApi.V1.Value (AssetClass)
 import PlutusLedgerApi.V2 (Address (..), Credential (..), CurrencySymbol, DatumHash, PubKeyHash, StakingCredential (..), TokenName)
 import PlutusTx qualified
 
+import Plutarch.Api.V1 (PRedeemer)
 import Plutarch.Api.V2 (PAddress, PCurrencySymbol, PDatum, PDatumHash, PMaybeData (..), PPubKeyHash, PScriptContext, PStakeValidator, PTokenName)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
@@ -163,8 +164,8 @@ minSwapAddress =
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
    in pconstant orderAddr
 
-validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PScriptContext :--> PBool)
-validateFn = plam $ \mOwner extraInfoData outputDatum _ -> P.do
+validateFn :: Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PRedeemer :--> PScriptContext :--> PBool)
+validateFn = plam $ \mOwner extraInfoData outputDatum _ _ -> P.do
   let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
       outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
   extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash", "minimumReceive"] extraInfo
