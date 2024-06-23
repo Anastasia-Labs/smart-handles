@@ -33,7 +33,10 @@ pcountInputsAtScript =
 
 data SmartHandleDatum
   = Simple Address -- <-- owner
-  | Advanced (Maybe Address) Integer PlutusTx.BuiltinData
+  | Advanced (Maybe Address) Integer Integer PlutusTx.BuiltinData
+
+--           ^-------------^ ^-----^ ^-----^ ^------------------^
+--               mOwner    routerFee reclaimRouterFee   extraInfo
 
 PlutusTx.makeLift ''SmartHandleDatum
 PlutusTx.makeIsDataIndexed
@@ -57,6 +60,7 @@ data PSmartHandleDatum (s :: S)
           ( PDataRecord
               '[ "mOwner" ':= PMaybeData PAddress
                , "routerFee" ':= PInteger
+               , "reclaimRouterFee" ':= PInteger
                , "extraInfo" ':= PData
                ]
           )
@@ -183,7 +187,18 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red c
               PDNothing _ ->
                 perror
 
-pswapRouter :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PInteger :--> PInteger :--> PBool :--> PScriptContext :--> PUnit)
+pswapRouter ::
+  Term
+    s
+    ( (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool)
+        :--> PAddress
+        :--> PSmartHandleDatum
+        :--> PInteger
+        :--> PInteger
+        :--> PBool
+        :--> PScriptContext
+        :--> PUnit
+    )
 pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex routerIndex forSwap ctx -> P.do
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
@@ -208,10 +223,13 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
                 , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
-              datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat'
+              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
+              let routerFee = pif forSwap (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
               pand'List
                 [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # forSwap # ctx
-                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # (pnegate # datF.routerFee))
+                , ptraceIfFalse
+                    "Incorrect Swap Output Value"
+                    (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # routerFee)
                 ]
         ]
     )

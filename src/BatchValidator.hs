@@ -3,7 +3,7 @@ module BatchValidator where
 import PlutusTx qualified
 
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
-import Plutarch.Api.V2 (PMaybeData (..), PStakingCredential, PValidator)
+import Plutarch.Api.V2 (PScriptContext, PStakingCredential, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
@@ -37,23 +37,24 @@ instance PTryFrom PData PSmartRedeemer
 instance PUnsafeLiftDecl PSmartRedeemer where type PLifted PSmartRedeemer = SmartRedeemer
 deriving via (DerivePConstantViaData SmartRedeemer PSmartRedeemer) instance PConstantDecl SmartRedeemer
 
+pstakeScriptIsInvoked :: Term s (PScriptContext :--> PStakingCredential :--> POpaque)
+pstakeScriptIsInvoked = plam $ \ctx stakeScript -> P.do
+  ctxF <- pletFields @'["txInfo"] ctx
+  let stakeCerts = pfield @"wdrl" # ctxF.txInfo
+  pmatch (AssocMap.plookup # stakeScript # stakeCerts) $ \case
+    PJust _ -> (popaque $ pconstant ())
+    PNothing -> perror
+
 smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
 smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer ctx -> P.do
   let red = pconvertUnsafe @PSmartRedeemer redeemer
       dat = pconvertChecked @PSmartHandleDatum datum
-  ctxF <- pletFields @'["txInfo"] ctx
   pmatch red $ \case
     PSwapSmart _ ->
-      let stakeCerts = pfield @"wdrl" # ctxF.txInfo
-       in pmatch (AssocMap.plookup # stakeScript # stakeCerts) $ \case
-            PJust _ -> (popaque $ pconstant ())
-            PNothing -> perror
+      pstakeScriptIsInvoked # ctx # stakeScript
     PReclaimSmart _ ->
       pmatch dat $ \case
         PSimple ((pfield @"owner" #) -> owner) ->
           popaque $ psignedByOwner # ctx # owner
-        PAdvanced ((pfield @"mOwner" #) -> mOwner) -> P.do
-          pmatch mOwner $ \case
-            PDJust ((pfield @"_0" #) -> owner) ->
-              popaque $ psignedByOwner # ctx # owner
-            PDNothing _ -> perror
+        PAdvanced _ ->
+          pstakeScriptIsInvoked # ctx # stakeScript

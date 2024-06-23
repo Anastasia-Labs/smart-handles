@@ -3,12 +3,12 @@ module SmartHandlesSpec (tests) where
 import Data.Either (fromRight)
 
 import PlutusLedgerApi.V1.Value (AssetClass (..), assetClass)
-import PlutusLedgerApi.V2 (Address (..), Credential (..), ScriptContext, StakingCredential (..), adaSymbol, adaToken, singleton)
+import PlutusLedgerApi.V2 (Address (..), Credential (..), ScriptContext, ScriptPurpose (Rewarding, Spending), StakingCredential (..), TxId (TxId), TxOutRef (TxOutRef), adaSymbol, adaToken, singleton)
 import PlutusTx (toBuiltinData, toData)
 
 import Plutarch
 import Plutarch.Api.V2 (scriptHash)
-import Plutarch.Context (Builder, address, buildRewarding', input, output, script, withDatum, withRedeemer, withValue, withdrawal)
+import Plutarch.Context (Builder, address, buildRewarding', extraRedeemer, input, output, script, withDatum, withRedeemer, withRef, withValue, withdrawal)
 import Plutarch.Prelude
 import Plutarch.Test.Precompiled (tryFromPTerm, (@!>), (@>))
 import Plutarch.Test.QuickCheck (TestableTerm (..), fromFailingPPartial, fromPFun)
@@ -18,6 +18,7 @@ import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, s
 
 import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
+import Debug.Trace (trace)
 import SingleValidator (SmartHandleDatum (..))
 import Specialized.Minswap
 import StakingValidator (RouterRedeemer (..), puniqueOrdered)
@@ -89,17 +90,25 @@ stakingCredential = StakingHash $ ScriptCredential $ scriptHash $ stakingScript
 minAssetClass :: AssetClass
 minAssetClass = assetClass "e16c2dc8ae937e8d3790c7fd7168d7b994621ba14ca11415f39fed72" "MIN"
 
+inputTxOutRef :: TxOutRef
+inputTxOutRef = TxOutRef (TxId "0000000000000000") 0
+
+inputRedeemer :: SmartRedeemer
+inputRedeemer = SwapSmart
+
 scriptInput :: (Builder a) => a
 scriptInput =
   input $
     mconcat
       [ script $ scriptHash routerScript
+      , withRef inputTxOutRef
       , withValue (singleton adaSymbol adaToken 10_000_000)
-      , withRedeemer SwapSmart
+      , withRedeemer inputRedeemer
       , withDatum $
           Advanced
             (Just $ Address alice Nothing)
             1_000_000
+            500_000
             ( toBuiltinData $
                 MinswapRequestInfo
                   (fst $ unAssetClass minAssetClass)
@@ -127,16 +136,18 @@ scriptOutput =
             }
       ]
 
-scriptContextWithNegativeIndex :: ScriptContext
-scriptContextWithNegativeIndex =
+scriptContextWithNegativeIndex :: RouterRedeemer -> ScriptContext
+scriptContextWithNegativeIndex withdrawRedeemer =
   buildRewarding' $
     mconcat
-      [ withdrawal stakingCredential 0
+      [ extraRedeemer (Rewarding stakingCredential) withdrawRedeemer
+      , extraRedeemer (Spending inputTxOutRef) inputRedeemer
+      , withdrawal stakingCredential 0
       , scriptInput
       , scriptOutput
       ]
 
 stakingValidatorTests :: TestTree
 stakingValidatorTests = tryFromPTerm "Staking validator" (pstakeValidator # minSwapAddress) $ do
-  [toData correctRouterRedeemer, toData scriptContextWithNegativeIndex] @> "accepts correct index"
-  [toData negativeIndicesRouterRedeemer, toData scriptContextWithNegativeIndex] @!> "does not accept negative index"
+  [toData correctRouterRedeemer, toData (trace (show (scriptContextWithNegativeIndex correctRouterRedeemer)) (scriptContextWithNegativeIndex correctRouterRedeemer))] @> "accepts correct index"
+  [toData negativeIndicesRouterRedeemer, toData (scriptContextWithNegativeIndex negativeIndicesRouterRedeemer)] @!> "does not accept negative index"
