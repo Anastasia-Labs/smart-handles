@@ -7,7 +7,7 @@ import PlutusLedgerApi.V1.Value (AssetClass, CurrencySymbol (..), TokenName (..)
 import PlutusLedgerApi.V2 (Redeemer)
 import PlutusTx qualified
 
-import Plutarch.Api.V1 (PCredential (PPubKeyCredential, PScriptCredential), PDatumHash, PRedeemer (PRedeemer))
+import Plutarch.Api.V1 (PCredential (PPubKeyCredential, PScriptCredential), PDatumHash)
 import Plutarch.Api.V1.AssocMap qualified as AssocMap
 import Plutarch.Api.V1.Value
 import Plutarch.Api.V1.Value qualified as Value
@@ -48,7 +48,6 @@ pcountScriptInputs =
 data RouterRedeemer = RouterRedeemer
   { inputIdxs :: [Integer]
   , outputIdxs :: [Integer]
-  , advancedRedeemers :: [PlutusTx.BuiltinData]
   }
 
 PlutusTx.makeLift ''RouterRedeemer
@@ -61,7 +60,6 @@ data PRouterRedeemer (s :: S)
           ( PDataRecord
               '[ "inputIdxs" ':= PBuiltinList (PAsData PInteger)
                , "outputIdxs" ':= PBuiltinList (PAsData PInteger)
-               , "advancedRedeemers" ':= PBuiltinList PData
                ]
           )
       )
@@ -77,36 +75,33 @@ instance PUnsafeLiftDecl PRouterRedeemer where type PLifted PRouterRedeemer = Ro
 deriving via (DerivePConstantViaData RouterRedeemer PRouterRedeemer) instance PConstantDecl RouterRedeemer
 
 pfoldCorrespondingUTxOs ::
-  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PRedeemer :--> PScriptContext :--> PBool) ->
+  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) ->
   Term s (PMap any PDatumHash PDatum) ->
   Term s PScriptContext ->
   Term s PAddress ->
   Term s PInteger ->
   Term s (PBuiltinList PTxOut) ->
   Term s (PBuiltinList PTxOut) ->
-  Term s (PBuiltinList PData) ->
   Term s PInteger
-pfoldCorrespondingUTxOs validateFn datMap ctx swapAddress acc la lb lr =
-  pfoldl3
+pfoldCorrespondingUTxOs validateFn datMap ctx swapAddress acc la lb =
+  pfoldl2
     # plam
-      ( \acc_ utxoIn utxoOut rdmr ->
-          acc_ + psmartHandleSuccessor validateFn datMap ctx swapAddress utxoIn utxoOut (pcon $ PRedeemer rdmr)
+      ( \acc_ utxoIn utxoOut ->
+          acc_ + psmartHandleSuccessor validateFn datMap ctx swapAddress utxoIn utxoOut
       )
     # acc
     # la
     # lb
-    # lr
 
 psmartHandleSuccessor ::
-  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PRedeemer :--> PScriptContext :--> PBool) ->
+  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) ->
   Term s (PMap any PDatumHash PDatum) ->
   Term s PScriptContext ->
   Term s PAddress ->
   Term s PTxOut ->
   Term s PTxOut ->
-  Term s PRedeemer ->
   Term s PInteger
-psmartHandleSuccessor validateFn datums ctx swapAddress smartInput swapOutput rdmr = P.do
+psmartHandleSuccessor validateFn datums ctx swapAddress smartInput swapOutput = P.do
   smartInputF <- pletFields @'["address", "value", "datum"] smartInput
   swapOutputF <- pletFields @'["address", "value", "datum"] swapOutput
 
@@ -119,13 +114,13 @@ psmartHandleSuccessor validateFn datums ctx swapAddress smartInput swapOutput rd
         , pmatch smartInputDatum $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # swapOutputDatum # rdmr # ctx
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # swapOutputDatum # pcon PTrue # ctx
                 , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # swapOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "extraInfo"] dat'
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # swapOutputDatum # rdmr # ctx
+                [ validateFn # datF.mOwner # datF.extraInfo # swapOutputDatum # pcon PTrue # ctx
                 , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # swapOutputF.value # (pnegate # datF.routerFee))
                 ]
         ]
@@ -154,7 +149,7 @@ puniqueOrdered =
           )
      in go
 
-smartHandleStakeValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PRedeemer :--> PScriptContext :--> PBool) :--> PAddress :--> PStakeValidator)
+smartHandleStakeValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PStakeValidator)
 smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress redeemer ctx -> P.do
   let red = pconvertUnsafe @PRouterRedeemer redeemer
   redF <- pletFields @'["inputIdxs", "outputIdxs", "advancedRedeemers"] red
@@ -165,7 +160,7 @@ smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress rede
 
   let smartInputs = puniqueOrdered # plam (\idx -> pfield @"resolved" #$ pelemAt @PBuiltinList # idx # txInputs) # 0 # redF.inputIdxs
       swapOutputs = puniqueOrdered # plam (\idx -> pelemAt @PBuiltinList # idx # txOuts) # 0 # redF.outputIdxs
-      foldCount = pfoldCorrespondingUTxOs validateFn infoF.datums ctx swapAddress 0 smartInputs swapOutputs redF.advancedRedeemers
+      foldCount = pfoldCorrespondingUTxOs validateFn infoF.datums ctx swapAddress 0 smartInputs swapOutputs
 
   let scInpCount = pcountScriptInputs # txInputs
       foldChecks =

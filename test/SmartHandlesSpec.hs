@@ -3,7 +3,7 @@ module SmartHandlesSpec (tests) where
 import Data.Either (fromRight)
 
 import PlutusLedgerApi.V1.Value (AssetClass (..), assetClass)
-import PlutusLedgerApi.V2 (Address (..), Credential (..), Data (B), ScriptContext, StakingCredential (..), adaSymbol, adaToken, dataToBuiltinData, singleton)
+import PlutusLedgerApi.V2 (Address (..), Credential (..), ScriptContext, StakingCredential (..), adaSymbol, adaToken, singleton)
 import PlutusTx (toBuiltinData, toData)
 
 import Plutarch
@@ -68,7 +68,6 @@ correctRouterRedeemer =
   RouterRedeemer
     { inputIdxs = [0]
     , outputIdxs = [0]
-    , advancedRedeemers = [dataToBuiltinData $ B ""]
     }
 
 negativeIndicesRouterRedeemer :: RouterRedeemer
@@ -76,7 +75,6 @@ negativeIndicesRouterRedeemer =
   RouterRedeemer
     { inputIdxs = [-1]
     , outputIdxs = [0]
-    , advancedRedeemers = [dataToBuiltinData $ B ""]
     }
 
 routerScript :: Script
