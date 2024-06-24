@@ -77,7 +77,7 @@ instance PUnsafeLiftDecl PSmartHandleDatum where type PLifted PSmartHandleDatum 
 deriving via (DerivePConstantViaData SmartHandleDatum PSmartHandleDatum) instance PConstantDecl SmartHandleDatum
 
 data SmartHandleRedeemer
-  = Swap
+  = Route
       { ownIndex :: Integer
       , routerIndex :: Integer
       }
@@ -90,13 +90,13 @@ data SmartHandleRedeemer
 PlutusTx.makeLift ''SmartHandleRedeemer
 PlutusTx.makeIsDataIndexed
   ''SmartHandleRedeemer
-  [ ('Swap, 0)
+  [ ('Route, 0)
   , ('Reclaim, 1)
   , ('AdvancedReclaim, 2)
   ]
 
 data PSmartHandleRedeemer (s :: S)
-  = PSwap (Term s (PDataRecord '["ownIndex" ':= PInteger, "routerIndex" ':= PInteger]))
+  = PRoute (Term s (PDataRecord '["ownIndex" ':= PInteger, "routerIndex" ':= PInteger]))
   | PReclaim (Term s (PDataRecord '[]))
   | PAdvancedReclaim (Term s (PDataRecord '["ownIndex" ':= PInteger, "routerIndex" ':= PInteger]))
   deriving stock (Generic)
@@ -153,21 +153,21 @@ ptryOwnInput = phoistAcyclic $
       # inputs
 
 psmartHandleValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PValidator)
-psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx ->
+psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn routeAddress dat red ctx ->
   let datum = pconvertChecked @PSmartHandleDatum dat
       redeemer = pconvertUnsafe @PSmartHandleRedeemer red
-   in popaque $ psmartHandleValidator # validateFn # swapAddress # datum # redeemer # ctx
+   in popaque $ psmartHandleValidator # validateFn # routeAddress # datum # redeemer # ctx
 
 psmartHandleValidator :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
-psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red ctx -> pmatch red $ \case
-  PSwap r ->
+psmartHandleValidator = phoistAcyclic $ plam $ \validateFn routeAddress dat red ctx -> pmatch red $ \case
+  PRoute r ->
     pmatch dat $ \case
       PSimple _ ->
         pletFields @'["ownIndex", "routerIndex"] r $ \redF -> P.do
-          pswapRouter # validateFn # swapAddress # dat # redF.ownIndex # redF.routerIndex # pcon PTrue # ctx
+          prouter # validateFn # routeAddress # dat # redF.ownIndex # redF.routerIndex # pcon PTrue # ctx
       PAdvanced _ -> P.do
         pletFields @'["ownIndex", "routerIndex", "advancedRedeemer"] r $ \redF -> P.do
-          pswapRouter # validateFn # swapAddress # dat # redF.ownIndex # redF.routerIndex # pcon PTrue # ctx
+          prouter # validateFn # routeAddress # dat # redF.ownIndex # redF.routerIndex # pcon PTrue # ctx
   PReclaim _ ->
     pmatch dat $ \case
       PSimple ((pfield @"owner" #) -> owner) ->
@@ -183,11 +183,11 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn swapAddress dat red c
           pletFields @'["mOwner", "routerFee", "extraInfo"] dat' $ \datF -> P.do
             pmatch datF.mOwner $ \case
               PDJust ((pfield @"_0" #) -> owner) ->
-                pswapRouter # validateFn # owner # dat # redF.ownIndex # redF.routerIndex # pcon PFalse # ctx
+                prouter # validateFn # owner # dat # redF.ownIndex # redF.routerIndex # pcon PFalse # ctx
               PDNothing _ ->
                 perror
 
-pswapRouter ::
+prouter ::
   Term
     s
     ( (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool)
@@ -199,7 +199,7 @@ pswapRouter ::
         :--> PScriptContext
         :--> PUnit
     )
-pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex routerIndex forSwap ctx -> P.do
+prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerIndex forRoute ctx -> P.do
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
   PSpending ((pfield @"_0" #) -> ownRef) <- pmatch ctxF.purpose
@@ -208,28 +208,28 @@ pswapRouter = phoistAcyclic $ plam $ \validateFn swapAddress dat ownIndex router
   ownInputF <- pletFields @'["value", "address"] indexedInput.resolved
   PScriptCredential ((pfield @"_0" #) -> ownValHash) <- pmatch (pfield @"credential" # ownInputF.address)
 
-  swapOutputF <- pletFields @'["datum", "value", "address"] (pelemAt @PBuiltinList # routerIndex # infoF.outputs)
+  routerOutputF <- pletFields @'["datum", "value", "address"] (pelemAt @PBuiltinList # routerIndex # infoF.outputs)
 
-  let outputDatum = presolveDatum # swapOutputF.datum # infoF.datums
+  let outputDatum = presolveDatum # routerOutputF.datum # infoF.datums
   pif
     ( pand'List
-        [ ptraceIfFalse "Incorrect indexed input" (ownRef #== indexedInput.outRef)
-        , ptraceIfFalse "Incorrect Swap Address" (swapOutputF.address #== swapAddress)
-        , ptraceIfFalse "Multiple script inputs spent" (pcountInputsAtScript # ownValHash # infoF.inputs #== 1)
+        [ ptraceIfFalse "Incorrect Indexed Input" (ownRef #== indexedInput.outRef)
+        , ptraceIfFalse "Incorrect Route Address" (routerOutputF.address #== routeAddress)
+        , ptraceIfFalse "Multiple Script Inputs Spent" (pcountInputsAtScript # ownValHash # infoF.inputs #== 1)
         , pmatch dat $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # outputDatum # forSwap # ctx
-                , ptraceIfFalse "Incorrect Swap Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # routerFeeAsNegativeLovelace)
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # outputDatum # forRoute # ctx
+                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
-              let routerFee = pif forSwap (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
+              let routerFee = pif forRoute (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # forSwap # ctx
+                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # forRoute # ctx
                 , ptraceIfFalse
-                    "Incorrect Swap Output Value"
-                    (pvalueHasChangedByLovelaces # ownInputF.value # swapOutputF.value # routerFee)
+                    "Incorrect Route Output Value"
+                    (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFee)
                 ]
         ]
     )

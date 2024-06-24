@@ -13,18 +13,18 @@ import SingleValidator (PSmartHandleDatum (PAdvanced, PSimple))
 import Utils (pconvertChecked, pconvertUnsafe, psignedByOwner)
 
 data SmartRedeemer
-  = SwapSmart
+  = RouteSmart
   | ReclaimSmart
 
 PlutusTx.makeLift ''SmartRedeemer
 PlutusTx.makeIsDataIndexed
   ''SmartRedeemer
-  [ ('SwapSmart, 0)
+  [ ('RouteSmart, 0)
   , ('ReclaimSmart, 1)
   ]
 
 data PSmartRedeemer (s :: S)
-  = PSwapSmart (Term s (PDataRecord '[]))
+  = PRouteSmart (Term s (PDataRecord '[]))
   | PReclaimSmart (Term s (PDataRecord '[]))
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData)
@@ -50,7 +50,7 @@ smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer 
   let red = pconvertUnsafe @PSmartRedeemer redeemer
       dat = pconvertChecked @PSmartHandleDatum datum
   pmatch red $ \case
-    PSwapSmart _ ->
+    PRouteSmart _ ->
       pstakeScriptIsInvoked # ctx # stakeScript
     PReclaimSmart _ ->
       pmatch dat $ \case

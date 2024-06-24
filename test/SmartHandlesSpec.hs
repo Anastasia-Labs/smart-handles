@@ -94,7 +94,7 @@ inputTxOutRef :: TxOutRef
 inputTxOutRef = TxOutRef (TxId "0000000000000000") 0
 
 inputRedeemer :: SmartRedeemer
-inputRedeemer = SwapSmart
+inputRedeemer = RouteSmart
 
 scriptInput :: (Builder a) => a
 scriptInput =
@@ -124,7 +124,7 @@ scriptOutput =
     mconcat
       [ address $ plift minSwapAddress
       , withValue (singleton adaSymbol adaToken 9_000_000)
-      , withRedeemer SwapSmart
+      , withRedeemer RouteSmart
       , withDatum $
           MinswapRequestDatum
             { sender = Address alice Nothing
