@@ -54,6 +54,7 @@ data RouterRedeemer = RouterRedeemer
 PlutusTx.makeLift ''RouterRedeemer
 PlutusTx.makeIsDataIndexed ''RouterRedeemer [('RouterRedeemer, 0)]
 
+-- TODO: Switch to: '[ "indices" ':= PBuiltinList (PAsData (PBuiltinPair (PAsData PInteger) (PAsData PInteger)))
 data PRouterRedeemer (s :: S)
   = PRouterRedeemer
       ( Term
@@ -76,7 +77,7 @@ instance PUnsafeLiftDecl PRouterRedeemer where type PLifted PRouterRedeemer = Ro
 deriving via (DerivePConstantViaData RouterRedeemer PRouterRedeemer) instance PConstantDecl RouterRedeemer
 
 pfoldCorrespondingUTxOs ::
-  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) ->
+  Term s PCustomValidator ->
   Term s (PMap any PDatumHash PDatum) ->
   Term s PScriptContext ->
   Term s PAddress ->
@@ -95,7 +96,7 @@ pfoldCorrespondingUTxOs validateFn datMap ctx routeAddress acc la lb =
     # lb
 
 psmartHandleSuccessor ::
-  Term s (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) ->
+  Term s PCustomValidator ->
   Term s (PMap any PDatumHash PDatum) ->
   Term s PScriptContext ->
   Term s PAddress ->
@@ -117,14 +118,14 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
         , pmatch smartInputDatum $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # routeOutputDatum # pcon PTrue # ctx
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # routeOutputF.value # routeOutputDatum # pcon PTrue # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
               let routerFee = pif forRoute (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                [ validateFn # datF.mOwner # datF.extraInfo # routeOutputF.value # routeOutputDatum # forRoute # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # routerFee)
                 ]
         ]
@@ -153,7 +154,7 @@ puniqueOrdered =
           )
      in go
 
-smartHandleStakeValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PStakeValidator)
+smartHandleStakeValidatorW :: Term s (PCustomValidator :--> PAddress :--> PStakeValidator)
 smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn routeAddress redeemer ctx -> P.do
   let red = pconvertUnsafe @PRouterRedeemer redeemer
   redF <- pletFields @'["inputIdxs", "outputIdxs", "advancedRedeemers"] red

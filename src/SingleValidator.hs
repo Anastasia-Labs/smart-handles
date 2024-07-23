@@ -4,7 +4,7 @@ import PlutusLedgerApi.V2 (Address)
 import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
-import Plutarch.Api.V2 (PAddress, PDatum, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
+import Plutarch.Api.V2 (PAddress, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
@@ -14,7 +14,7 @@ import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
 import Constants (routerFeeAsNegativeLovelace)
-import Utils (pand'List, pconvertChecked, pconvertUnsafe, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
+import Utils (PCustomValidator, pand'List, pconvertChecked, pconvertUnsafe, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
@@ -152,13 +152,13 @@ ptryOwnInput = phoistAcyclic $
       (const perror)
       # inputs
 
-psmartHandleValidatorW :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PValidator)
+psmartHandleValidatorW :: Term s (PCustomValidator :--> PAddress :--> PValidator)
 psmartHandleValidatorW = phoistAcyclic $ plam $ \validateFn routeAddress dat red ctx ->
   let datum = pconvertChecked @PSmartHandleDatum dat
       redeemer = pconvertUnsafe @PSmartHandleRedeemer red
    in popaque $ psmartHandleValidator # validateFn # routeAddress # datum # redeemer # ctx
 
-psmartHandleValidator :: Term s ((PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool) :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psmartHandleValidator :: Term s (PCustomValidator :--> PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
 psmartHandleValidator = phoistAcyclic $ plam $ \validateFn routeAddress dat red ctx -> pmatch red $ \case
   PRoute r ->
     pmatch dat $ \case
@@ -190,7 +190,7 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn routeAddress dat red 
 prouter ::
   Term
     s
-    ( (PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool)
+    ( PCustomValidator
         :--> PAddress
         :--> PSmartHandleDatum
         :--> PInteger
@@ -219,14 +219,14 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
         , pmatch dat $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # outputDatum # forRoute # ctx
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # routerOutputF.value # outputDatum # forRoute # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
               let routerFee = pif forRoute (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # forRoute # ctx
+                [ validateFn # datF.mOwner # datF.extraInfo # routerOutputF.value # outputDatum # forRoute # ctx
                 , ptraceIfFalse
                     "Incorrect Route Output Value"
                     (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFee)
