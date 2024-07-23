@@ -159,6 +159,7 @@ smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn routeAddress red
   let red = pconvertUnsafe @PRouterRedeemer redeemer
   redF <- pletFields @'["inputIdxs", "outputIdxs", "advancedRedeemers"] red
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
+  PRewarding _ <- pmatch ctxF.purpose
   infoF <- pletFields @'["inputs", "outputs", "signatories", "redeemers", "datums"] ctxF.txInfo
   txInputs <- plet infoF.inputs
   txOuts <- plet infoF.outputs
