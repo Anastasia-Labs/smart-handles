@@ -14,7 +14,7 @@ import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
-type PCustomValidator = PMaybeData PAddress :--> PData :--> PValue 'Sorted 'Positive :--> PDatum :--> PBool :--> PScriptContext :--> PBool
+type PCustomValidator = PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool
 
 data PAssetClass (s :: S) = PAssetClass (Term s (PDataRecord '["cs" ':= PCurrencySymbol, "tn" ':= PTokenName]))
   deriving stock (Generic)

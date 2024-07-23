@@ -219,14 +219,14 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
         , pmatch dat $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # routerOutputF.value # outputDatum # forRoute # ctx
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # outputDatum # forRoute # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFeeAsNegativeLovelace)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
               let routerFee = pif forRoute (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # routerOutputF.value # outputDatum # forRoute # ctx
+                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # forRoute # ctx
                 , ptraceIfFalse
                     "Incorrect Route Output Value"
                     (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFee)
