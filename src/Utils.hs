@@ -14,7 +14,15 @@ import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
-type PCustomValidator = PMaybeData PAddress :--> PData :--> PDatum :--> PBool :--> PScriptContext :--> PBool
+type PCustomValidator =
+  ( PMaybeData PAddress -- possible owner
+      :--> PInteger -- routing fee
+      :--> PData -- extraInfo from the `Advanced` datum
+      :--> PDatum -- routing address output datum (resolved hash, or inline)
+      :--> PBool -- routing flag (`True` for routing, `False` for reclaiming)
+      :--> PScriptContext -- script context
+      :--> PBool
+  )
 
 data PAssetClass (s :: S) = PAssetClass (Term s (PDataRecord '["cs" ':= PCurrencySymbol, "tn" ':= PTokenName]))
   deriving stock (Generic)

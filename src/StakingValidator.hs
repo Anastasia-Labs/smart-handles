@@ -26,7 +26,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext (pfromPDatum, ptryFr
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 
 import BatchValidator (PSmartRedeemer (..))
-import Constants (routerFeeAsNegativeLovelace)
+import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
 import Plutarch.Builtin (PIsData (pdataImpl), ppairDataBuiltin)
 import SingleValidator (PSmartHandleDatum (..))
 import Utils
@@ -118,15 +118,15 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
         , pmatch smartInputDatum $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # routeOutputDatum # pcon PTrue # ctx
-                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # routerFeeAsNegativeLovelace)
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # routerFeeForSimpleRoutes # punsafeCoerce (pconstant ()) # routeOutputDatum # pcon PTrue # ctx
+                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # negativeRouterFeeForSimpleRoutes)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
-              let routerFee = pif forRoute (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
+              let routerFee = pif forRoute datF.routerFee datF.reclaimRouterFee
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # routeOutputDatum # forRoute # ctx
-                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # routerFee)
+                [ validateFn # datF.mOwner # routerFee # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # routerFee))
                 ]
         ]
     )

@@ -13,7 +13,7 @@ import Plutarch.Prelude
 import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
-import Constants (routerFeeAsNegativeLovelace)
+import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
 import Utils (PCustomValidator, pand'List, pconvertChecked, pconvertUnsafe, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
@@ -219,17 +219,17 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
         , pmatch dat $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # punsafeCoerce (pconstant ()) # outputDatum # forRoute # ctx
-                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFeeAsNegativeLovelace)
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # routerFeeForSimpleRoutes # punsafeCoerce (pconstant ()) # outputDatum # forRoute # ctx
+                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # negativeRouterFeeForSimpleRoutes)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
-              let routerFee = pif forRoute (pnegate # datF.routerFee) (pnegate # datF.reclaimRouterFee)
+              let routerFee = pif forRoute datF.routerFee datF.reclaimRouterFee
               pand'List
-                [ validateFn # datF.mOwner # datF.extraInfo # outputDatum # forRoute # ctx
+                [ validateFn # datF.mOwner # routerFee # datF.extraInfo # outputDatum # forRoute # ctx
                 , ptraceIfFalse
                     "Incorrect Route Output Value"
-                    (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # routerFee)
+                    (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # (pnegate # routerFee))
                 ]
         ]
     )
