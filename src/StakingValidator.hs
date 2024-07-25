@@ -113,22 +113,37 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
       routeOutputDatum = presolveDatum # routeOutputF.datum # datums
 
   pif
-    ( pand'List
-        [ ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== routeAddress)
-        , pmatch smartInputDatum $ \case
-            PSimple ((pfield @"owner" #) -> owner) ->
-              pand'List
+    ( pmatch smartInputDatum $ \case
+        PSimple ((pfield @"owner" #) -> owner) ->
+          pif
+            forRoute
+            ( pand'List
                 [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # routerFeeForSimpleRoutes # smartInputF.value # punsafeCoerce (pconstant ()) # routeOutputDatum # pcon PTrue # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # negativeRouterFeeForSimpleRoutes)
+                , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== routeAddress)
                 ]
-            PAdvanced dat' -> P.do
-              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
-              let routerFee = pif forRoute datF.routerFee datF.reclaimRouterFee
-              pand'List
-                [ validateFn # datF.mOwner # routerFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
-                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # routerFee))
+            )
+            (psignedByOwner # ctx # owner)
+        PAdvanced dat' -> P.do
+          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
+          pif
+            forRoute
+            ( pand'List
+                [ validateFn # datF.mOwner # datF.routerFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # datF.routerFee))
+                , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== routeAddress)
                 ]
-        ]
+            )
+            ( pmatch (pfield @"mOwner" # dat') $ \case
+                PDJust ((pfield @"_0" #) -> owner) ->
+                  pand'List
+                    [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                    , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
+                    , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== owner)
+                    ]
+                PDNothing _ ->
+                  perror
+            )
     )
     (pconstant 1)
     perror

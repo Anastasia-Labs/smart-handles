@@ -180,16 +180,13 @@ pconvertChecked x = ptryFrom x fst
 pconvertUnsafe :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
 pconvertUnsafe = punsafeCoerce
 
-psignedByOwner :: Term s (PScriptContext :--> PAddress :--> PUnit)
+psignedByOwner :: Term s (PScriptContext :--> PAddress :--> PBool)
 psignedByOwner = plam $ \ctx owner ->
   pmatch (pfield @"credential" # owner) $ \case
     PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
-      ( pif
-          (pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx)))
-          (pconstant ())
-          perror
-      )
-    _ -> perror
+      pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx))
+    _ ->
+      pcon PFalse
 
 pvalueHasChangedByLovelaces :: Term s (PValue 'Sorted 'Positive :--> PValue 'Sorted 'Positive :--> PInteger :--> PBool)
 pvalueHasChangedByLovelaces = plam $ \inVal outVal change ->

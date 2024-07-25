@@ -171,7 +171,7 @@ psmartHandleValidator = phoistAcyclic $ plam $ \validateFn routeAddress dat red 
   PReclaim _ ->
     pmatch dat $ \case
       PSimple ((pfield @"owner" #) -> owner) ->
-        psignedByOwner # ctx # owner
+        pif (psignedByOwner # ctx # owner) (pconstant ()) perror
       PAdvanced _ ->
         perror
   PAdvancedReclaim r ->
