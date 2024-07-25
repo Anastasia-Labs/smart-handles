@@ -118,14 +118,14 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
         , pmatch smartInputDatum $ \case
             PSimple ((pfield @"owner" #) -> owner) ->
               pand'List
-                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # routerFeeForSimpleRoutes # punsafeCoerce (pconstant ()) # routeOutputDatum # pcon PTrue # ctx
+                [ validateFn # pcon (PDJust $ pdcons # pdata owner # pdnil) # routerFeeForSimpleRoutes # smartInputF.value # punsafeCoerce (pconstant ()) # routeOutputDatum # pcon PTrue # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # negativeRouterFeeForSimpleRoutes)
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
               let routerFee = pif forRoute datF.routerFee datF.reclaimRouterFee
               pand'List
-                [ validateFn # datF.mOwner # routerFee # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                [ validateFn # datF.mOwner # routerFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # routerFee))
                 ]
         ]

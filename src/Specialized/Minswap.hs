@@ -164,7 +164,7 @@ minSwapAddress =
    in pconstant orderAddr
 
 validateFn :: Term s PCustomValidator
-validateFn = plam $ \mOwner _routingFee extraInfoData outputDatum _forRoute _ctx -> P.do
+validateFn = plam $ \mOwner _routingFee _inputValue extraInfoData outputDatum _forRoute _ctx -> P.do
   let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
       outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
   extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash", "minimumReceive"] extraInfo

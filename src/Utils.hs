@@ -17,6 +17,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 type PCustomValidator =
   ( PMaybeData PAddress -- possible owner
       :--> PInteger -- routing fee
+      :--> PValue 'Sorted 'Positive -- value of the input utxo
       :--> PData -- extraInfo from the `Advanced` datum
       :--> PDatum -- routing address output datum (resolved hash, or inline)
       :--> PBool -- routing flag (`True` for routing, `False` for reclaiming)
