@@ -108,7 +108,7 @@ scriptInput =
           Advanced
             (Just $ Address alice Nothing)
             1_000_000
-            500_000
+            0
             ( toBuiltinData $
                 MinswapRequestInfo
                   (fst $ unAssetClass minAssetClass)
