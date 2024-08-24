@@ -224,7 +224,7 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
                 ]
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
-              let routerFee = pif forRoute datF.routerFee datF.reclaimRouterFee
+              routerFee <- plet $ pif forRoute datF.routerFee datF.reclaimRouterFee
               pand'List
                 [ validateFn # datF.mOwner # routerFee # ownInputF.value # datF.extraInfo # outputDatum # forRoute # ctx
                 , ptraceIfFalse
