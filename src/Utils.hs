@@ -153,27 +153,6 @@ pfoldl2 =
         (pif (pnull # lb) acc perror)
         la
 
-pfoldl3 ::
-  (PListLike listA, PListLike listB, PListLike listC, PElemConstraint listA a, PElemConstraint listB b, PElemConstraint listC c) =>
-  Term s ((acc :--> a :--> b :--> c :--> acc) :--> acc :--> listA a :--> listB b :--> listC c :--> acc)
-pfoldl3 =
-  phoistAcyclic $ plam $ \func ->
-    pfix #$ plam $ \self acc la lb lc ->
-      pelimList
-        ( \a as ->
-            pelimList
-              ( \b bs ->
-                  pelimList
-                    (\c cs -> self # (func # acc # a # b # c) # as # bs # cs)
-                    perror
-                    lc
-              )
-              (pif (pnull # lc) acc perror)
-              lb
-        )
-        (pif (pnull # lb) acc perror)
-        la
-
 pconvertChecked :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
 pconvertChecked x = ptryFrom x fst
 

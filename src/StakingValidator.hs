@@ -172,10 +172,10 @@ puniqueOrdered =
 smartHandleStakeValidatorW :: Term s (PCustomValidator :--> PAddress :--> PStakeValidator)
 smartHandleStakeValidatorW = phoistAcyclic $ plam $ \validateFn routeAddress redeemer ctx -> P.do
   let red = pconvertUnsafe @PRouterRedeemer redeemer
-  redF <- pletFields @'["inputIdxs", "outputIdxs", "advancedRedeemers"] red
+  redF <- pletFields @'["inputIdxs", "outputIdxs"] red
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
   PRewarding _ <- pmatch ctxF.purpose
-  infoF <- pletFields @'["inputs", "outputs", "signatories", "redeemers", "datums"] ctxF.txInfo
+  infoF <- pletFields @'["inputs", "outputs", "redeemers", "datums"] ctxF.txInfo
   txInputs <- plet infoF.inputs
   txOuts <- plet infoF.outputs
 
