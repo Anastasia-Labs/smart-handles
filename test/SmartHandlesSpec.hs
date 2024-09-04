@@ -19,7 +19,7 @@ import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, s
 import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
 import Debug.Trace (trace)
-import SingleValidator (ReclaimMint (..), SmartHandleDatum (..))
+import SingleValidator (RequiredMint (..), SmartHandleDatum (..))
 import Specialized.Minswap
 import StakingValidator (RouterRedeemer (..), puniqueOrdered)
 
