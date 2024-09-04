@@ -19,7 +19,7 @@ import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, s
 import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
 import Debug.Trace (trace)
-import SingleValidator (SmartHandleDatum (..))
+import SingleValidator (ReclaimMint (..), SmartHandleDatum (..))
 import Specialized.Minswap
 import StakingValidator (RouterRedeemer (..), puniqueOrdered)
 
@@ -109,6 +109,7 @@ scriptInput =
             (Just $ Address alice Nothing)
             1_000_000
             0
+            None
             ( toBuiltinData $
                 MinswapRequestInfo
                   (fst $ unAssetClass minAssetClass)

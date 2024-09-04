@@ -1,10 +1,11 @@
 module SingleValidator where
 
-import PlutusLedgerApi.V2 (Address)
+import PlutusLedgerApi.V2 (Address, CurrencySymbol, TokenName)
 import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
-import Plutarch.Api.V1.Value (passertPositive, pforgetPositive)
+import Plutarch.Api.V1.Value (PCurrencySymbol, PTokenName, passertPositive, pforgetPositive)
+import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2 (PAddress, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
@@ -15,7 +16,7 @@ import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
 import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
-import Utils (PCustomValidator, pand'List, pconvertChecked, pconvertUnsafe, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
+import Utils (PCustomValidator, pand'List, pconvertChecked, pconvertUnsafe, pmintIsSameAsSingleton, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
@@ -32,12 +33,46 @@ pcountInputsAtScript =
             n
      in go # 0
 
+data ReclaimMint
+  = Singleton CurrencySymbol TokenName Integer
+  | None
+
+PlutusTx.makeLift ''ReclaimMint
+PlutusTx.makeIsDataIndexed
+  ''ReclaimMint
+  [ ('Singleton, 0)
+  , ('None, 1)
+  ]
+
+data PReclaimMint (s :: S)
+  = PSingleton
+      ( Term
+          s
+          ( PDataRecord
+              '[ "policy" ':= PCurrencySymbol
+               , "name" ':= PTokenName
+               , "quantity" ':= PInteger
+               ]
+          )
+      )
+  | PNone (Term s (PDataRecord '[]))
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PIsData)
+
+instance DerivePlutusType PReclaimMint where
+  type DPTStrat _ = PlutusTypeData
+
+instance PTryFrom PData PReclaimMint
+
+instance PUnsafeLiftDecl PReclaimMint where type PLifted PReclaimMint = ReclaimMint
+deriving via (DerivePConstantViaData ReclaimMint PReclaimMint) instance PConstantDecl ReclaimMint
+
 data SmartHandleDatum
   = Simple Address -- <-- owner
-  | Advanced (Maybe Address) Integer Integer PlutusTx.BuiltinData
+  | Advanced (Maybe Address) Integer Integer ReclaimMint PlutusTx.BuiltinData
 
---           ^-------------^ ^-----^ ^-----^ ^------------------^
---               mOwner    routerFee reclaimRouterFee   extraInfo
+--           ^-------------^ ^-----^ ^-----^             ^------------------^
+--               mOwner    routerFee reclaimRouterFee          extraInfo
 
 PlutusTx.makeLift ''SmartHandleDatum
 PlutusTx.makeIsDataIndexed
@@ -62,6 +97,7 @@ data PSmartHandleDatum (s :: S)
               '[ "mOwner" ':= PMaybeData PAddress
                , "routerFee" ':= PInteger
                , "reclaimRouterFee" ':= PInteger
+               , "reclaimMint" ':= PReclaimMint
                , "extraInfo" ':= PData
                ]
           )
@@ -224,12 +260,22 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # negativeRouterFeeForSimpleRoutes)
                 ]
             PAdvanced dat' -> P.do
-              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
+              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "reclaimMint", "extraInfo"] dat'
+              let inputIncludingMint = pmatch datF.reclaimMint $ \case
+                    PSingleton rm -> P.do
+                      rmF <- pletFields @'["policy", "name", "quantity"] rm
+                      let reclaimMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
+                          inputAppendedWithMint = reclaimMintValue <> pforgetPositive ownInputF.value
+                      pif
+                        ( ptraceIfFalse
+                            "Tx mint doesn't match the reclaim mint"
+                            (pmintIsSameAsSingleton rmF.policy rmF.name rmF.quantity infoF.mint)
+                        )
+                        (passertPositive # inputAppendedWithMint)
+                        perror
+                    PNone _ ->
+                      ownInputF.value
               routerFee <- plet $ pif forRoute datF.routerFee datF.reclaimRouterFee
-              -- Any mint occuring in the transaction must be reflected in the
-              -- output UTxO.
-              let inputAppendedWithMint = infoF.mint <> pforgetPositive ownInputF.value
-                  inputIncludingMint = passertPositive # inputAppendedWithMint
               pand'List
                 [ validateFn # datF.mOwner # routerFee # ownInputF.value # datF.extraInfo # outputDatum # forRoute # ctx
                 , ptraceIfFalse

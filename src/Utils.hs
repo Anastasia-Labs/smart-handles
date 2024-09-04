@@ -173,3 +173,62 @@ pvalueHasChangedByLovelaces = plam $ \inVal outVal change ->
     (change #== 0)
     (outVal #== inVal)
     (pforgetPositive outVal #== (pforgetPositive inVal <> (psingleton # padaSymbol # padaToken # change)))
+
+presolveMapToList ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (a :: PType)
+    (b :: PType)
+    (s :: S).
+  Term s (PMap anyOrder a b) ->
+  Term s (PBuiltinList (PBuiltinPair (PAsData a) (PAsData b)))
+presolveMapToList m = pmatch m $ \(PMap l) -> l
+
+{- | Converts a `PValue` to a `PBuiltinList`. Does not convert the inner `PMap`
+of token names and quantities to a list.
+-}
+presolveValueToList ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (anyAmount :: AmountGuarantees)
+    (s :: S).
+  Term s (PValue anyOrder anyAmount) ->
+  Term s (PBuiltinList (PBuiltinPair (PAsData PCurrencySymbol) (PAsData (PMap anyOrder PTokenName PInteger))))
+presolveValueToList v =
+  pmatch v $ \(PValue v') ->
+    pmatch (presolveMapToList v') $ \kvs -> pcon kvs
+
+{- | Get the head of the list if the list contains exactly one element,
+otherwise error.
+-}
+pheadSingleton ::
+  (PListLike list, PElemConstraint list a) =>
+  Term s (list a) ->
+  Term s a
+pheadSingleton =
+  pelimList
+    (pelimList (\_ _ -> ptraceError "List contains more than one element."))
+    (ptraceError "List is empty.")
+
+-- | Check if the mint field contains exactly the provided singleton.
+pmintIsSameAsSingleton ::
+  Term s PCurrencySymbol ->
+  Term s PTokenName ->
+  Term s PInteger ->
+  Term s (PValue 'Sorted 'NoGuarantees) ->
+  Term s PBool
+pmintIsSameAsSingleton policy name qty mintVal =
+  let
+    mintAsset = pheadSingleton $ presolveValueToList mintVal
+    mintCS = pfstBuiltin # mintAsset
+   in
+    plet (pheadSingleton $ pto $ pfromData (psndBuiltin # mintAsset)) $ \mintTnQtyPairs ->
+      let
+        mintTN = pfstBuiltin # mintTnQtyPairs
+        mintQty = psndBuiltin # mintTnQtyPairs
+       in
+        pand'List
+          [ policy #== pfromData mintCS
+          , name #== pfromData mintTN
+          , qty #== pfromData mintQty
+          ]

@@ -28,7 +28,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 import BatchValidator (PSmartRedeemer (..))
 import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
 import Plutarch.Builtin (PIsData (pdataImpl), ppairDataBuiltin)
-import SingleValidator (PSmartHandleDatum (..))
+import SingleValidator (PReclaimMint (..), PSmartHandleDatum (..))
 import Utils
 
 pcountScriptInputs :: Term s (PBuiltinList PTxInInfo :--> PInteger)
@@ -125,7 +125,7 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
             )
             (psignedByOwner # ctx # owner)
         PAdvanced dat' -> P.do
-          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
+          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "reclaimMint", "extraInfo"] dat'
           pif
             forRoute
             ( pand'List
@@ -135,20 +135,28 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
                 ]
             )
             ( pmatch (pfield @"mOwner" # dat') $ \case
-                PDJust ((pfield @"_0" #) -> owner) ->
-                  let
-                    txInfo = pfield @"txInfo" # ctx
-                    mint = pfield @"mint" # txInfo
-                    -- Any mint occuring in the transaction must be reflected in the
-                    -- output UTxO.
-                    inputAppendedWithMint = mint <> pforgetPositive smartInputF.value
-                    inputIncludingMint = passertPositive # inputAppendedWithMint
-                   in
-                    pand'List
-                      [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
-                      , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # inputIncludingMint # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
-                      , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== owner)
-                      ]
+                PDJust ((pfield @"_0" #) -> owner) -> P.do
+                  let txInfo = pfield @"txInfo" # ctx
+                      mint = pfield @"mint" # txInfo
+                      inputIncludingMint = pmatch datF.reclaimMint $ \case
+                        PSingleton rm -> P.do
+                          rmF <- pletFields @'["policy", "name", "quantity"] rm
+                          let reclaimMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
+                              inputAppendedWithMint = reclaimMintValue <> pforgetPositive smartInputF.value
+                          pif
+                            ( ptraceIfFalse
+                                "Tx mint doesn't match the reclaim mint"
+                                (pmintIsSameAsSingleton rmF.policy rmF.name rmF.quantity mint)
+                            )
+                            (passertPositive # inputAppendedWithMint)
+                            perror
+                        PNone _ ->
+                          smartInputF.value
+                  pand'List
+                    [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                    , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # inputIncludingMint # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
+                    , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== owner)
+                    ]
                 PDNothing _ ->
                   perror
             )
