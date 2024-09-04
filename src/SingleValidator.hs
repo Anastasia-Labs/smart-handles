@@ -1,11 +1,9 @@
 module SingleValidator where
 
-import PlutusLedgerApi.V2 (Address, CurrencySymbol, TokenName)
+import PlutusLedgerApi.V2 (Address)
 import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
-import Plutarch.Api.V1.Value (PCurrencySymbol, PTokenName, passertPositive, pforgetPositive)
-import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2 (PAddress, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
@@ -16,7 +14,7 @@ import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.ScriptContext ()
 
 import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
-import Utils (PCustomValidator, pand'List, pconvertChecked, pconvertUnsafe, pmintIsSameAsSingleton, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
+import Utils (PCustomValidator, PRequiredMint (..), RequiredMint, pand'List, papplyRequiredMintToInputValue, pconvertChecked, pconvertUnsafe, presolveDatum, psignedByOwner, pvalueHasChangedByLovelaces)
 
 pcountInputsAtScript :: Term s (PScriptHash :--> PBuiltinList PTxInInfo :--> PInteger)
 pcountInputsAtScript =
@@ -33,46 +31,12 @@ pcountInputsAtScript =
             n
      in go # 0
 
-data RequiredMint
-  = Singleton CurrencySymbol TokenName Integer
-  | None
-
-PlutusTx.makeLift ''RequiredMint
-PlutusTx.makeIsDataIndexed
-  ''RequiredMint
-  [ ('Singleton, 0)
-  , ('None, 1)
-  ]
-
-data PRequiredMint (s :: S)
-  = PSingleton
-      ( Term
-          s
-          ( PDataRecord
-              '[ "policy" ':= PCurrencySymbol
-               , "name" ':= PTokenName
-               , "quantity" ':= PInteger
-               ]
-          )
-      )
-  | PNone (Term s (PDataRecord '[]))
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData)
-
-instance DerivePlutusType PRequiredMint where
-  type DPTStrat _ = PlutusTypeData
-
-instance PTryFrom PData PRequiredMint
-
-instance PUnsafeLiftDecl PRequiredMint where type PLifted PRequiredMint = RequiredMint
-deriving via (DerivePConstantViaData RequiredMint PRequiredMint) instance PConstantDecl RequiredMint
-
 data SmartHandleDatum
   = Simple Address -- <-- owner
-  | Advanced (Maybe Address) Integer Integer RequiredMint PlutusTx.BuiltinData
+  | Advanced (Maybe Address) Integer Integer RequiredMint RequiredMint PlutusTx.BuiltinData
 
---           ^-------------^ ^-----^ ^-----^              ^------------------^
---               mOwner    routerFee reclaimRouterFee          extraInfo
+--           ^-------------^ ^-----^ ^-----^                           ^------------------^
+--               mOwner    routerFee reclaimRouterFee                       extraInfo
 
 PlutusTx.makeLift ''SmartHandleDatum
 PlutusTx.makeIsDataIndexed
@@ -97,7 +61,8 @@ data PSmartHandleDatum (s :: S)
               '[ "mOwner" ':= PMaybeData PAddress
                , "routerFee" ':= PInteger
                , "reclaimRouterFee" ':= PInteger
-               , "requiredMint" ':= PRequiredMint
+               , "routeRequiredMint" ':= PRequiredMint
+               , "reclaimRequiredMint" ':= PRequiredMint
                , "extraInfo" ':= PData
                ]
           )
@@ -260,20 +225,11 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # negativeRouterFeeForSimpleRoutes)
                 ]
             PAdvanced dat' -> P.do
-              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "requiredMint", "extraInfo"] dat'
-              let inputIncludingMint = pmatch datF.requiredMint $ \case
-                    PSingleton rm -> P.do
-                      rmF <- pletFields @'["policy", "name", "quantity"] rm
-                      let requiredMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
-                          inputAppendedWithMint = requiredMintValue <> pforgetPositive ownInputF.value
-                      pif
-                        ( ptraceIfFalse
-                            "Tx mint doesn't match the reclaim mint"
-                            (pmintIsSameAsSingleton rmF.policy rmF.name rmF.quantity infoF.mint)
-                        )
-                        (passertPositive # inputAppendedWithMint)
-                        perror
-                    PNone _ ->
+              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "routeRequiredMint", "reclaimRequiredMint", "extraInfo"] dat'
+              let inputIncludingMint =
+                    papplyRequiredMintToInputValue
+                      infoF.mint
+                      (pif forRoute datF.routeRequiredMint datF.reclaimRequiredMint)
                       ownInputF.value
               routerFee <- plet $ pif forRoute datF.routerFee datF.reclaimRouterFee
               pand'List

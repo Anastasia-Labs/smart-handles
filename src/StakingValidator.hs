@@ -28,7 +28,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 import BatchValidator (PSmartRedeemer (..))
 import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
 import Plutarch.Builtin (PIsData (pdataImpl), ppairDataBuiltin)
-import SingleValidator (PRequiredMint (..), PSmartHandleDatum (..))
+import SingleValidator (PSmartHandleDatum (..))
 import Utils
 
 pcountScriptInputs :: Term s (PBuiltinList PTxInInfo :--> PInteger)
@@ -125,38 +125,38 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
             )
             (psignedByOwner # ctx # owner)
         PAdvanced dat' -> P.do
-          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "requiredMint", "extraInfo"] dat'
+          let txInfo = pfield @"txInfo" # ctx
+              mint = pfield @"mint" # txInfo
+          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "routeRequiredMint", "reclaimRequiredMint", "extraInfo"] dat'
           pif
             forRoute
-            ( pand'List
-                [ validateFn # datF.mOwner # datF.routerFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
-                , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # datF.routerFee))
-                , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== routeAddress)
-                ]
+            ( let
+                inputIncludingMint =
+                  papplyRequiredMintToInputValue
+                    mint
+                    datF.routeRequiredMint
+                    smartInputF.value
+               in
+                pand'List
+                  [ validateFn # datF.mOwner # datF.routerFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                  , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # inputIncludingMint # routeOutputF.value # (pnegate # datF.routerFee))
+                  , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== routeAddress)
+                  ]
             )
             ( pmatch (pfield @"mOwner" # dat') $ \case
-                PDJust ((pfield @"_0" #) -> owner) -> P.do
-                  let txInfo = pfield @"txInfo" # ctx
-                      mint = pfield @"mint" # txInfo
-                      inputIncludingMint = pmatch datF.requiredMint $ \case
-                        PSingleton rm -> P.do
-                          rmF <- pletFields @'["policy", "name", "quantity"] rm
-                          let requiredMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
-                              inputAppendedWithMint = requiredMintValue <> pforgetPositive smartInputF.value
-                          pif
-                            ( ptraceIfFalse
-                                "Tx mint doesn't match the reclaim mint"
-                                (pmintIsSameAsSingleton rmF.policy rmF.name rmF.quantity mint)
-                            )
-                            (passertPositive # inputAppendedWithMint)
-                            perror
-                        PNone _ ->
-                          smartInputF.value
-                  pand'List
-                    [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
-                    , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # inputIncludingMint # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
-                    , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== owner)
-                    ]
+                PDJust ((pfield @"_0" #) -> owner) ->
+                  let
+                    inputIncludingMint =
+                      papplyRequiredMintToInputValue
+                        mint
+                        datF.reclaimRequiredMint
+                        smartInputF.value
+                   in
+                    pand'List
+                      [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                      , ptraceIfFalse "Incorrect Reclaim Output Value" (pvalueHasChangedByLovelaces # inputIncludingMint # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
+                      , ptraceIfFalse "Incorrect Reclaim Address" (routeOutputF.address #== owner)
+                      ]
                 PDNothing _ ->
                   perror
             )

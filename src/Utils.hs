@@ -2,13 +2,19 @@
 
 module Utils where
 
+import PlutusLedgerApi.V2 (CurrencySymbol, TokenName)
+import PlutusTx qualified
+
 import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.AssocMap (plookup)
 import Plutarch.Api.V1.Value (padaSymbol, padaToken, pforgetPositive, psingleton)
+import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
+import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Maybe (pfromJust)
+import Plutarch.Monadic qualified as P
 import Plutarch.Prelude hiding (psingleton)
 import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
@@ -33,6 +39,40 @@ instance DerivePlutusType PAssetClass where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PAssetClass
+
+data RequiredMint
+  = Singleton CurrencySymbol TokenName Integer
+  | None
+
+PlutusTx.makeLift ''RequiredMint
+PlutusTx.makeIsDataIndexed
+  ''RequiredMint
+  [ ('Singleton, 0)
+  , ('None, 1)
+  ]
+
+data PRequiredMint (s :: S)
+  = PSingleton
+      ( Term
+          s
+          ( PDataRecord
+              '[ "policy" ':= PCurrencySymbol
+               , "name" ':= PTokenName
+               , "quantity" ':= PInteger
+               ]
+          )
+      )
+  | PNone (Term s (PDataRecord '[]))
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PIsData)
+
+instance DerivePlutusType PRequiredMint where
+  type DPTStrat _ = PlutusTypeData
+
+instance PTryFrom PData PRequiredMint
+
+instance PUnsafeLiftDecl PRequiredMint where type PLifted PRequiredMint = RequiredMint
+deriving via (DerivePConstantViaData RequiredMint PRequiredMint) instance PConstantDecl RequiredMint
 
 pexpectJust :: Term s r -> Term s (PMaybe a) -> TermCont @r s (Term s a)
 pexpectJust escape ma = tcont $ \f -> pmatch ma $ \case
@@ -232,3 +272,24 @@ pmintIsSameAsSingleton policy name qty mintVal =
           , name #== pfromData mintTN
           , qty #== pfromData mintQty
           ]
+
+papplyRequiredMintToInputValue ::
+  Term s (PValue 'Sorted 'NoGuarantees) ->
+  Term s PRequiredMint ->
+  Term s (PValue 'Sorted 'Positive) ->
+  Term s (PValue 'Sorted 'Positive)
+papplyRequiredMintToInputValue mint requiredMint inputValue =
+  pmatch requiredMint $ \case
+    PSingleton rm -> P.do
+      rmF <- pletFields @'["policy", "name", "quantity"] rm
+      let requiredMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
+          inputAppendedWithMint = requiredMintValue <> pforgetPositive inputValue
+      pif
+        ( ptraceIfFalse
+            "Tx mint doesn't match the reclaim mint"
+            (pmintIsSameAsSingleton rmF.policy rmF.name rmF.quantity mint)
+        )
+        (Value.passertPositive # inputAppendedWithMint)
+        perror
+    PNone _ ->
+      inputValue

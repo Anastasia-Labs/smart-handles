@@ -19,9 +19,10 @@ import Test.Tasty.QuickCheck (Gen, Property, chooseInt, chooseInteger, forAll, s
 import BatchValidator (SmartRedeemer (..), smartHandleRouteValidatorW)
 import Compilation
 import Debug.Trace (trace)
-import SingleValidator (RequiredMint (..), SmartHandleDatum (..))
+import SingleValidator (SmartHandleDatum (..))
 import Specialized.Minswap
 import StakingValidator (RouterRedeemer (..), puniqueOrdered)
+import Utils (RequiredMint (..))
 
 tests :: TestTree
 tests = testGroup "Smart handles" [uniqueOrderedTests, stakingValidatorTests]
@@ -109,6 +110,7 @@ scriptInput =
             (Just $ Address alice Nothing)
             1_000_000
             0
+            None
             None
             ( toBuiltinData $
                 MinswapRequestInfo
