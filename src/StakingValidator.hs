@@ -28,7 +28,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
 import BatchValidator (PSmartRedeemer (..))
 import Constants (negativeRouterFeeForSimpleRoutes, routerFeeForSimpleRoutes)
 import Plutarch.Builtin (PIsData (pdataImpl), ppairDataBuiltin)
-import SingleValidator (PReclaimMint (..), PSmartHandleDatum (..))
+import SingleValidator (PRequiredMint (..), PSmartHandleDatum (..))
 import Utils
 
 pcountScriptInputs :: Term s (PBuiltinList PTxInInfo :--> PInteger)
@@ -125,7 +125,7 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
             )
             (psignedByOwner # ctx # owner)
         PAdvanced dat' -> P.do
-          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "reclaimMint", "extraInfo"] dat'
+          datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "requiredMint", "extraInfo"] dat'
           pif
             forRoute
             ( pand'List
@@ -138,11 +138,11 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
                 PDJust ((pfield @"_0" #) -> owner) -> P.do
                   let txInfo = pfield @"txInfo" # ctx
                       mint = pfield @"mint" # txInfo
-                      inputIncludingMint = pmatch datF.reclaimMint $ \case
+                      inputIncludingMint = pmatch datF.requiredMint $ \case
                         PSingleton rm -> P.do
                           rmF <- pletFields @'["policy", "name", "quantity"] rm
-                          let reclaimMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
-                              inputAppendedWithMint = reclaimMintValue <> pforgetPositive smartInputF.value
+                          let requiredMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
+                              inputAppendedWithMint = requiredMintValue <> pforgetPositive smartInputF.value
                           pif
                             ( ptraceIfFalse
                                 "Tx mint doesn't match the reclaim mint"
