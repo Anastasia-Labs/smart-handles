@@ -33,18 +33,18 @@ pcountInputsAtScript =
             n
      in go # 0
 
-data RequiredMint
+data ReclaimMint
   = Singleton CurrencySymbol TokenName Integer
   | None
 
-PlutusTx.makeLift ''RequiredMint
+PlutusTx.makeLift ''ReclaimMint
 PlutusTx.makeIsDataIndexed
-  ''RequiredMint
+  ''ReclaimMint
   [ ('Singleton, 0)
   , ('None, 1)
   ]
 
-data PRequiredMint (s :: S)
+data PReclaimMint (s :: S)
   = PSingleton
       ( Term
           s
@@ -59,19 +59,19 @@ data PRequiredMint (s :: S)
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData)
 
-instance DerivePlutusType PRequiredMint where
+instance DerivePlutusType PReclaimMint where
   type DPTStrat _ = PlutusTypeData
 
-instance PTryFrom PData PRequiredMint
+instance PTryFrom PData PReclaimMint
 
-instance PUnsafeLiftDecl PRequiredMint where type PLifted PRequiredMint = RequiredMint
-deriving via (DerivePConstantViaData RequiredMint PRequiredMint) instance PConstantDecl RequiredMint
+instance PUnsafeLiftDecl PReclaimMint where type PLifted PReclaimMint = ReclaimMint
+deriving via (DerivePConstantViaData ReclaimMint PReclaimMint) instance PConstantDecl ReclaimMint
 
 data SmartHandleDatum
   = Simple Address -- <-- owner
-  | Advanced (Maybe Address) Integer Integer RequiredMint PlutusTx.BuiltinData
+  | Advanced (Maybe Address) Integer Integer ReclaimMint PlutusTx.BuiltinData
 
---           ^-------------^ ^-----^ ^-----^              ^------------------^
+--           ^-------------^ ^-----^ ^-----^             ^------------------^
 --               mOwner    routerFee reclaimRouterFee          extraInfo
 
 PlutusTx.makeLift ''SmartHandleDatum
@@ -97,7 +97,7 @@ data PSmartHandleDatum (s :: S)
               '[ "mOwner" ':= PMaybeData PAddress
                , "routerFee" ':= PInteger
                , "reclaimRouterFee" ':= PInteger
-               , "requiredMint" ':= PRequiredMint
+               , "reclaimMint" ':= PReclaimMint
                , "extraInfo" ':= PData
                ]
           )
@@ -260,12 +260,12 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
                 , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # negativeRouterFeeForSimpleRoutes)
                 ]
             PAdvanced dat' -> P.do
-              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "requiredMint", "extraInfo"] dat'
-              let inputIncludingMint = pmatch datF.requiredMint $ \case
+              datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "reclaimMint", "extraInfo"] dat'
+              let inputIncludingMint = pmatch datF.reclaimMint $ \case
                     PSingleton rm -> P.do
                       rmF <- pletFields @'["policy", "name", "quantity"] rm
-                      let requiredMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
-                          inputAppendedWithMint = requiredMintValue <> pforgetPositive ownInputF.value
+                      let reclaimMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
+                          inputAppendedWithMint = reclaimMintValue <> pforgetPositive ownInputF.value
                       pif
                         ( ptraceIfFalse
                             "Tx mint doesn't match the reclaim mint"
