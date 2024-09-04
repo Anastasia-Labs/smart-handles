@@ -66,7 +66,7 @@ data PRouterRedeemer (s :: S)
           )
       )
   deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields)
+  deriving anyclass (PlutusType, PIsData, PDataFields, PShow)
 
 instance DerivePlutusType PRouterRedeemer where
   type DPTStrat _ = PlutusTypeData
@@ -136,11 +136,19 @@ psmartHandleSuccessor validateFn datums ctx routeAddress smartInputRouteFlagPair
             )
             ( pmatch (pfield @"mOwner" # dat') $ \case
                 PDJust ((pfield @"_0" #) -> owner) ->
-                  pand'List
-                    [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
-                    , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # smartInputF.value # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
-                    , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== owner)
-                    ]
+                  let
+                    txInfo = pfield @"txInfo" # ctx
+                    mint = pfield @"mint" # txInfo
+                    -- Any mint occuring in the transaction must be reflected in the
+                    -- output UTxO.
+                    inputAppendedWithMint = mint <> pforgetPositive smartInputF.value
+                    inputIncludingMint = passertPositive # inputAppendedWithMint
+                   in
+                    pand'List
+                      [ validateFn # datF.mOwner # datF.reclaimRouterFee # smartInputF.value # datF.extraInfo # routeOutputDatum # forRoute # ctx
+                      , ptraceIfFalse "Incorrect Route Output Value" (pvalueHasChangedByLovelaces # inputIncludingMint # routeOutputF.value # (pnegate # datF.reclaimRouterFee))
+                      , ptraceIfFalse "Incorrect Route Address" (routeOutputF.address #== owner)
+                      ]
                 PDNothing _ ->
                   perror
             )

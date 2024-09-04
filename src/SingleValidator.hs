@@ -4,6 +4,7 @@ import PlutusLedgerApi.V2 (Address)
 import PlutusTx qualified
 
 import Plutarch.Api.V1.Address (PCredential (..))
+import Plutarch.Api.V1.Value (passertPositive, pforgetPositive)
 import Plutarch.Api.V2 (PAddress, PMaybeData (..), PScriptContext, PScriptHash, PScriptPurpose (..), PTxInInfo, PTxOut, PTxOutRef, PValidator)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
@@ -201,7 +202,7 @@ prouter ::
     )
 prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerIndex forRoute ctx -> P.do
   ctxF <- pletFields @'["txInfo", "purpose"] ctx
-  infoF <- pletFields @'["inputs", "outputs", "signatories", "datums"] ctxF.txInfo
+  infoF <- pletFields @'["inputs", "outputs", "signatories", "datums", "mint"] ctxF.txInfo
   PSpending ((pfield @"_0" #) -> ownRef) <- pmatch ctxF.purpose
   indexedInput <- pletFields @'["outRef", "resolved"] (pelemAt @PBuiltinList # ownIndex # infoF.inputs)
 
@@ -225,11 +226,15 @@ prouter = phoistAcyclic $ plam $ \validateFn routeAddress dat ownIndex routerInd
             PAdvanced dat' -> P.do
               datF <- pletFields @'["mOwner", "routerFee", "reclaimRouterFee", "extraInfo"] dat'
               routerFee <- plet $ pif forRoute datF.routerFee datF.reclaimRouterFee
+              -- Any mint occuring in the transaction must be reflected in the
+              -- output UTxO.
+              let inputAppendedWithMint = infoF.mint <> pforgetPositive ownInputF.value
+                  inputIncludingMint = passertPositive # inputAppendedWithMint
               pand'List
                 [ validateFn # datF.mOwner # routerFee # ownInputF.value # datF.extraInfo # outputDatum # forRoute # ctx
                 , ptraceIfFalse
                     "Incorrect Route Output Value"
-                    (pvalueHasChangedByLovelaces # ownInputF.value # routerOutputF.value # (pnegate # routerFee))
+                    (pvalueHasChangedByLovelaces # inputIncludingMint # routerOutputF.value # (pnegate # routerFee))
                 ]
         ]
     )
