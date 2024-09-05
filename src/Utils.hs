@@ -41,7 +41,7 @@ instance DerivePlutusType PAssetClass where
 instance PTryFrom PData PAssetClass
 
 data RequiredMint
-  = Singleton CurrencySymbol TokenName Integer
+  = Singleton CurrencySymbol TokenName
   | None
 
 PlutusTx.makeLift ''RequiredMint
@@ -58,7 +58,6 @@ data PRequiredMint (s :: S)
           ( PDataRecord
               '[ "policy" ':= PCurrencySymbol
                , "name" ':= PTokenName
-               , "quantity" ':= PInteger
                ]
           )
       )
@@ -250,28 +249,35 @@ pheadSingleton =
     (pelimList (\_ _ -> ptraceError "List contains more than one element."))
     (ptraceError "List is empty.")
 
--- | Check if the mint field contains exactly the provided singleton.
-pmintIsSameAsSingleton ::
+{- | Check if the mint field contains exactly the provided singleton. Returns
+  the mint amount.
+-}
+pgetMintQuantityOfSingleton ::
   Term s PCurrencySymbol ->
   Term s PTokenName ->
-  Term s PInteger ->
   Term s (PValue 'Sorted 'NoGuarantees) ->
-  Term s PBool
-pmintIsSameAsSingleton policy name qty mintVal =
-  let
-    mintAsset = pheadSingleton $ presolveValueToList mintVal
-    mintCS = pfstBuiltin # mintAsset
-   in
-    plet (pheadSingleton $ pto $ pfromData (psndBuiltin # mintAsset)) $ \mintTnQtyPairs ->
-      let
-        mintTN = pfstBuiltin # mintTnQtyPairs
-        mintQty = psndBuiltin # mintTnQtyPairs
-       in
-        pand'List
-          [ policy #== pfromData mintCS
-          , name #== pfromData mintTN
-          , qty #== pfromData mintQty
-          ]
+  Term s PInteger
+pgetMintQuantityOfSingleton policy name mintVal =
+  plet (pheadSingleton $ presolveValueToList mintVal) $ \mintAsset ->
+    let
+      mintCS = pfstBuiltin # mintAsset
+     in
+      plet (pheadSingleton $ pto $ pfromData (psndBuiltin # mintAsset)) $ \mintTnQtyPairs ->
+        let
+          mintTN = pfstBuiltin # mintTnQtyPairs
+          mintQty = psndBuiltin # mintTnQtyPairs
+         in
+          pif
+            ( ptraceIfFalse
+                "Tx mint doesn't match the reclaim mint"
+                ( pand'List
+                    [ policy #== pfromData mintCS
+                    , name #== pfromData mintTN
+                    ]
+                )
+            )
+            (pfromData mintQty)
+            perror
 
 papplyRequiredMintToInputValue ::
   Term s (PValue 'Sorted 'NoGuarantees) ->
@@ -281,15 +287,10 @@ papplyRequiredMintToInputValue ::
 papplyRequiredMintToInputValue mint requiredMint inputValue =
   pmatch requiredMint $ \case
     PSingleton rm -> P.do
-      rmF <- pletFields @'["policy", "name", "quantity"] rm
-      let requiredMintValue = Value.psingleton # rmF.policy # rmF.name # rmF.quantity
+      rmF <- pletFields @'["policy", "name"] rm
+      let mintQty = pgetMintQuantityOfSingleton rmF.policy rmF.name mint
+          requiredMintValue = Value.psingleton # rmF.policy # rmF.name # mintQty
           inputAppendedWithMint = requiredMintValue <> pforgetPositive inputValue
-      pif
-        ( ptraceIfFalse
-            "Tx mint doesn't match the reclaim mint"
-            (pmintIsSameAsSingleton rmF.policy rmF.name rmF.quantity mint)
-        )
-        (Value.passertPositive # inputAppendedWithMint)
-        perror
+      Value.passertPositive # inputAppendedWithMint
     PNone _ ->
       inputValue
