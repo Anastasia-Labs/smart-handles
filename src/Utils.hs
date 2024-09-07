@@ -40,6 +40,13 @@ instance DerivePlutusType PAssetClass where
 
 instance PTryFrom PData PAssetClass
 
+data PTriple (a :: PType) (b :: PType) (c :: PType) (s :: S)
+  = PTriple (Term s a) (Term s b) (Term s c)
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PEq, PShow)
+
+instance DerivePlutusType (PTriple a b c) where type DPTStrat _ = PlutusTypeScott
+
 data RequiredMint
   = Singleton CurrencySymbol TokenName
   | None
@@ -249,6 +256,43 @@ pheadSingleton =
     (pelimList (\_ _ -> ptraceError "List contains more than one element."))
     (ptraceError "List is empty.")
 
+-- | Helper function for converting intermediary datatypes.
+psingleAssetToTriple ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (s :: S).
+  Term
+    s
+    ( PBuiltinPair
+        (PAsData PCurrencySymbol)
+        (PAsData (PMap anyOrder PTokenName PInteger))
+        :--> PTriple PCurrencySymbol PTokenName PInteger
+    )
+psingleAssetToTriple = plam $ \asset ->
+  let
+    cs = pfstBuiltin # asset
+    tnQtyMap = psndBuiltin # asset
+    tnQtyPairs = presolveMapToList $ pfromData tnQtyMap
+   in
+    plet (pheadSingleton tnQtyPairs) $ \tnQtyPair ->
+      let
+        tn = pfstBuiltin # tnQtyPair
+        qty = psndBuiltin # tnQtyPair
+       in
+        pcon (PTriple (pfromData cs) (pfromData tn) (pfromData qty))
+
+-- | Grabs the singular asset in a given `PValue`, ignoring its ADA.
+pgetSingleAssetApartFromADA ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (anyAmount :: AmountGuarantees)
+    (s :: S).
+  Term s (PValue anyOrder anyAmount) ->
+  Term s (PTriple PCurrencySymbol PTokenName PInteger)
+pgetSingleAssetApartFromADA v =
+  -- not using `pelimList` as it would've lead to evaluation of the head
+  psingleAssetToTriple #$ pheadSingleton $ ptail # presolveValueToList v
+
 {- | Check if the mint field contains exactly the provided singleton. Returns
   the mint amount.
 -}
@@ -258,26 +302,14 @@ pgetMintQuantityOfSingleton ::
   Term s (PValue 'Sorted 'NoGuarantees) ->
   Term s PInteger
 pgetMintQuantityOfSingleton policy name mintVal =
-  plet (pheadSingleton $ presolveValueToList mintVal) $ \mintAsset ->
-    let
-      mintCS = pfstBuiltin # mintAsset
-     in
-      plet (pheadSingleton $ pto $ pfromData (psndBuiltin # mintAsset)) $ \mintTnQtyPairs ->
-        let
-          mintTN = pfstBuiltin # mintTnQtyPairs
-          mintQty = psndBuiltin # mintTnQtyPairs
-         in
-          pif
-            ( ptraceIfFalse
-                "Tx mint doesn't match the reclaim mint"
-                ( pand'List
-                    [ policy #== pfromData mintCS
-                    , name #== pfromData mintTN
-                    ]
-                )
-            )
-            (pfromData mintQty)
-            perror
+  pmatch (pgetSingleAssetApartFromADA mintVal) $ \(PTriple mintCS mintTN mintQty) ->
+    pif
+      ( ptraceIfFalse
+          "Tx mint doesn't match the reclaim mint"
+          (pand'List [policy #== mintCS, name #== mintTN])
+      )
+      mintQty
+      perror
 
 papplyRequiredMintToInputValue ::
   Term s (PValue 'Sorted 'NoGuarantees) ->
