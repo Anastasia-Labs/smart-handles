@@ -23,134 +23,142 @@
 
 ## Introduction
 
-Smart Beacons is a framework for routing transactions. It is essentially AdaHandles for Smart Contract addresses. 
+Smart Handles is an abstract Cardano contract generator for instantiating
+validators that are meant to be carried out by incentivised agents to handle
+the requests in a decentralized and trustless manner.
 
-Through the use of Smart Beacons & router scripts, users will be able to interact with DApps without going through their front-end or building the smart contract transactions themselves. 
+One of the simplest use-cases can be an instance for swapping one specific token
+to another without going through a DEX UI directly. This instance will have its
+unique address, which can be complemented with AdaHandles (e.g. `@ada-to-min`)
+and therefore any wallet that supports Smart Handles configurations can send
+some $ADA directly to this address to be swapped for $MIN.
 
-For example, swapping tokens on a dex will be as simple as sending funds to `@ada-to-min` (or whatever token pair you want). It doesn’t need to be a swap, this can be done for any arbitrary smart contract interaction. For instance, sending funds to `@offer-spacebudz` (which resolves to a router smart contract for SpaceBudz collection offers) could create a collection offer for SpaceBudz. Each smart beacon requires a custom routing smart contract. 
+This is not limited to swaps of course. For instance, sending funds to
+`@offer-spacebudz` (which resolves to a router smart contract for SpaceBudz
+collection offers) could create a collection offer for SpaceBudz.
 
-Here we demonstrates the use of Smart Beacons for swapping $ADA for $MIN through Minswap exchange by implementing the routing script for `@ada-to-min`.
+The example here uses Smart Handles for swapping any token pairs through Minswap
+exchange.
 
-This project is funded by the Cardano Treasury in [Catalyst Fund 10](https://projectcatalyst.io/funds/10/f10-osde-open-source-dev-ecosystem/anastasia-labs-smart-beacons-router-nfts).
+This project is funded by the Cardano Treasury
+in [Catalyst Fund 10](https://projectcatalyst.io/funds/10/f10-osde-open-source-dev-ecosystem/anastasia-labs-smart-beacons-router-nfts).
 
 ## Documentation
 
 ### What problems do Smart Beacons solve?
 
-Right now, most interaction with smart contract protocols is done through centralized front-end services where the transactions are built and submitted through centralized backend infrastructure. In addition to the negative impact this has on decentralization, it also hampers adoption due to the restrictions it imposes. For instance, users with mobile wallets have severely limited options when it comes to interacting with DApps. Also, regular users will be unable to interact with most DApps if the DApp front-ends were to become unavailable for any reason or if the backend was down.
+Right now, most interaction with smart contract protocols is done through
+centralized front-end services where the transactions are built and submitted
+through centralized backend infrastructure. In addition to the negative impact
+this has on decentralization, it also hampers adoption due to the restrictions
+it imposes. For instance, users with mobile wallets have severely limited
+options when it comes to interacting with DApps. Also, regular users will be
+unable to interact with most DApps if the DApp front-ends were to become
+unavailable for any reason or if the backend was down.
 
-There are a few attempts to address this problem, such as [DApp Schemas](https://cardano.ideascale.com/c/idea/64468) or [Smart Contract Blueprints](https://developers.cardano.org/docs/governance/cardano-improvement-proposals/cip-0057/); however, all of these solutions rely on offchain infrastructure to specify how to interpret a DApp's datums, redeemers, and other onchain data in order to build transactions. Smart Beacons differ from these other approaches in that it is a fully onchain solution that does not rely on offchain infrastructure.
+There are a few attempts to address this problem, such as
+[DApp Schemas](https://cardano.ideascale.com/c/idea/64468) or
+[Smart Contract Blueprints](https://developers.cardano.org/docs/governance/cardano-improvement-proposals/cip-0057/); however,
+all of these solutions rely on off-chain infrastructure to specify how to
+interpret a DApp's datums, redeemers, and other on-chain data in order to build
+transactions. Smart Beacons differ from these other approaches in that it is a
+fully onchain solution that does not rely on offchain infrastructure.
 
-A Smart Beacon is an NFT that lives at a UTxO locked in a spending validator; the datum of the UTxO specifies how to interact with the spending validator that locks it. The datum is in essence an onchain Schema describing how to interact with the associated DApp (or at-least with the spending validator that locks the associated UTxO).
+UTxOs locked at a Smart Handles instance can carry datums that determine how a
+routing agent should reproduce them at their specified destination addresses
+(or route addresses).
 
-### Details
+In case of simple datums however, the interaction logic is hard-coded in the
+instance itself, and their corresponding off-chain agents should provide routers
+with all they need to handle requests.
 
-#### Basic Routing Script
+## Contract Logic
 
-A user sends tokens to the routing contract with a datum containing information for how they should be handled. Keep in mind that a single UTxO corresponds to a single routing request.
-
-```haskell
-data SmartHandleDatum = SmartHandleDatum
-  { mOwner :: Maybe Address
-  , routerFee :: Integer
-  , extraInfo :: BuiltinData
-  }
+Smart Handles framework offers two datums:
+```hs
+data PSmartHandleDatum (s :: S)
+  = PSimple (Term s (PDataRecord '["owner" ':= PAddress]))
+  | PAdvanced
+      ( Term
+          s
+          ( PDataRecord
+              '[ "mOwner" ':= PMaybeData PAddress
+               , "routerFee" ':= PInteger
+               , "reclaimRouterFee" ':= PInteger
+               , "routeRequiredMint" ':= PRequiredMint
+               , "reclaimRequiredMint" ':= PRequiredMint
+               , "extraInfo" ':= PData
+               ]
+          )
+      )
 ```
+- `Simple`, which only carries an owner address
+- `Advanced`, which allows for a more involved routing/reclaim scenarios:
+  - `mOwner` is an optional owner (if this is set to `Nothing` it makes the UTxO
+    un-reclaimable)
+  - `routerFee` specifies how much an agent must be compensated for routing a
+    request
+  - `reclaimRouterFee` is similar to `routerFee` for invoking the advanced
+    reclaim endpoint (this helps with balancing of the incentive structure)
+  - `routeRequiredMint` is a value (isomorphic with
+    `Maybe (PolicyID, TokenName)`) that specifies whether a route output must
+    append the same quantity of mints/burns present in the transaction
+  - `reclaimRequiredMint` is similar to `routeRequiredMint`, but for the
+    advanced reclaim endpoint
+  - `extraInfo` is an arbitrary `PData` provided for instances
 
-1. `mOwner` is an optional address for which a given owner has reclaim authority over the UTxO. If no owner is specified, the UTxO can not be reclaimed and should only be routed.
-2. `routerFee` is a number greater than or equal to zero that specifies how much $ADA the routing agent receives in case of a successful transaction.
-3. `extraInfo` is an arbitrary piece of data that is specific to instances of smart beacons.
+On top of that, each instance can also support a "single" variant and a "batch"
+variant: Single will be a spending script that only supports a single
+route/reclaim per transaction. Batch, on the other hand, is a staking script for
+handling multiple requests in single transactions.
 
-After the user posts this request, the routing agents take responsibility of sending this UTxO from the contract address to a specified swap/routing address. They do so by initiating a spending transaction (with a `SmartHandleRedeemer`) and sending the output UTxO (with the correct datum as required by the instance's validation logic). Upon building a successful transaction, they'll take their fee in Lovelaces equal to the integer specified in `routerFee` field of the datum.
-
-```haskell
-data SmartHandleRedeemer
-  = Swap
-      { ownIndex :: Integer
-      , routerIndex :: Integer
-      }
-  | Reclaim
-
-data MinswapRequestDatum = MinswapRequestDatum
-  { sender :: Address                               => Owner
-  , receiver :: Address                             => Owner
-  , receiverDatumHash :: Maybe DatumHash            => Constr 1 []
-  , step :: OrderType                               => Constr 0 [Constr 0 [policyId, tokenName], minAmount]
-  , batcherFee :: Integer                           => 2_000_000
-  , outputAda :: Integer                            => 2_000_000
-  }
+Single variants will have 3 redeemers: routing, simple reclaims, and advanced
+reclaims:
+```hs
+data PSmartHandleRedeemer (s :: S)
+  = PRoute (Term s (PDataRecord '["ownIndex" ':= PInteger, "routerIndex" ':= PInteger]))
+  | PReclaim (Term s (PDataRecord '[]))
+  | PAdvancedReclaim (Term s (PDataRecord '["ownIndex" ':= PInteger, "routerIndex" ':= PInteger]))
 ```
+Simple reclaim only applies to simple datums, and the only requirement is
+imposes on withdrawals is the signature of the owner. Advanced reclaim passes
+the spending UTxO to instance's underlying validator, and therefore has a
+redeemer similar to the routing endpoint.
 
-`Swap` tells the contract which output UTxO (outputs[ routerIndex ]) is created from the spending of provided script input UTxO (inputs[ ownIndex ]) to facilitate validations. The potential owner can choose to reclaim his locked funds back (if they haven't been spent yet) by initiating a spending transaction with `Reclaim` redeemer.
+Batch variants' scripts (spending and staking) will have 2 redeemers each:
+```hs
+-- for the staking script
+data PRouterRedeemer (s :: S)
+  = PRouterRedeemer
+      ( Term
+          s
+          ( PDataRecord
+              '[ "inputIdxs" ':= PBuiltinList (PAsData PInteger)
+               , "outputIdxs" ':= PBuiltinList (PAsData PInteger)
+               ]
+          )
+      )
 
-The `psmartHandleValidator` function takes 2 parameters:
-1. An arbitrary validation function
-2. A swap/destination address
-
-```haskell
-psmartHandleValidator :: Term s
-  (    (PMaybeData PAddress :--> PData :--> PDatum :--> PBool)
-  :--> PAddress
-  :--> PSmartHandleDatum
-  :--> PSmartHandleRedeemer
-  :--> PScriptContext
-  :--> PUnit
-  )
+-- for the batch spend script
+data PSmartRedeemer (s :: S)
+  = PRouteSmart (Term s (PDataRecord '[]))
+  | PReclaimSmart (Term s (PDataRecord '[]))
 ```
+The underlying logic of an instance is shared between the two variants, and
+therefore utilizing either one will be very similar.
 
-As an example, we have implemented a Minswap instance (compiled script at `./compiled/smartHandleSimple.json`, needs the swap address parameter to be applied) where the validation logic expects a specific structure for `extraInfo`, and validates the produced UTxO at Minswap's swap address has a proper datum attached, such that a batcher can carry out the swap.
+You may have noticed that both redeemers are using the [UTxO indexer pattern](https://github.com/Anastasia-Labs/design-patterns/blob/main/utxo-indexers/UTXO-INDEXERS.md)
+for a more optimized performance.
 
-This instance however, is limited as it only allows one script input to be spent in a single transaction, severely limiting the routing throughput per transaction.
-
-Allowing more than one script input to be spent within it, could result in a critical vulnerability in the form of [Double Satisfaction Attack](https://plutus.readthedocs.io/en/latest/reference/writing-scripts/common-weaknesses/double-satisfaction.html?highlight=double#unique-outputs). This contract serves as a starting point for understanding and working with Smart Beacons. For those looking to carry out routing of multiple script inputs in a single transaction, the next section provides the required details.
-
-#### Advanced Routing Script
-
-Here a single transaction can fulfill multiple routings, whether all of them are correct or not, is validated only once at the transaction level using the [Zero ADA Withdrawal Trick](https://github.com/cardano-foundation/CIPs/pull/418#issuecomment-1366605115) from a Staking validator. Similar to the single variant, the staking validator takes the same 2 parameters:
-
-```haskell
-smartHandleStakeValidatorW :: Term s
-  (    (PMaybeData PAddress :--> PData :--> PDatum :--> PBool)
-  :--> PAddress
-  :--> PStakeValidator
-  )
-```
-
-The compiled script at `./compiled/smartHandleStake.json`, which is the batch variant of the Minswap instance, takes care of validating all script inputs against their corresponding swap outputs in a given transaction. It takes Minswap's swap address as a parameter.
-
-This Staking validator's credential is used as a parameter to a Spending Validator (`smartHandleRouteValidatorW`, compiled script at `./compiled/smartHandleRouter.json`), the advanced routing contract which locks the user's UTxOs. Spending validator ensures that the Staking validator is executed in the transaction thereby confirming that no script input avoids validation. A successful validation from both spending and staking validator is essentail for spending UTxOs.
-
-```haskell
-smartHandleRouteValidatorW :: Term s (PStakingCredential :--> PValidator)
-```
-
-For carrying out this tx level validation, the Staking Validator requires a redeemer containing one-to-one correlation between script input UTxOs (user UTxOs) and swap output UTxOs (sent to Minswap by routing agents). This is provided via ordered lists of input/output indices of inputs/ouputs present in the Script Context.
-
-```haskell
-data RouterRedeemer = RouterRedeemer
-  { inputIdxs :: [Integer]
-  , outputIdxs :: [Integer]
-  }
-```
-
-For e.g.
-
-```
-Inputs     :  [swapOrderA, swapOrderC, randomInput3, swapOrderB, randomInput1, randomInput2]          // random inputs are not routing script inputs
-Outputs    :  [swapOutputA, swapOutputB, swapOutputC, randomOuput1, randomOutput2, randomOutput3]
-InputIdxs  :  [0, 1, 3]
-OutputIdxs :  [0, 2, 1]
-```
-
-While its easy to understand and declare indices of outputs (the order in which outputs appear in the tx builder), we cannot control the order of inputs as seen by the script. As inputs are sorted lexicographically based on their output reference, first by Tx#Id and then by Tx#Idx.
-
-Note: Staking validator need not be invoked if user wishes to cancel his swap order and reclaim funds.
 
 ## Getting Started
 
 ### Prerequisites
 
-Before you begin, ensure you have [Nix](https://nixos.org) installed on your system. Nix is used for package management and to provide a consistent development environment. If you don't have Nix installed, you can do so by running the following command:
+Before you begin, ensure you have [Nix](https://nixos.org) installed on your
+system. Nix is used for package management and to provide a consistent
+development environment. If you don't have Nix installed, you can do so by
+running the following command:
 
 #### Official option
 
@@ -176,16 +184,23 @@ experimental-features = nix-command flakes ca-derivations
 allow-import-from-derivation = true
 ```
 
-Optionally, to improve build speed, it is possible to set up binary caches by adding additional configuration entries:
+Optionally, to improve build speed, it is possible to set up binary caches by
+adding additional configuration entries:
 
 ```yaml
 substituters = https://cache.nixos.org https://cache.iog.io https://cache.zw3rk.com
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=
 ```
 
-To facilitate seamlessly moving between directories and associated Nix development shells we use [direnv](https://direnv.net) and [nix-direnv](https://github.com/nix-community/nix-direnv):
+To facilitate seamlessly moving between directories and associated Nix
+development shells we use [direnv](https://direnv.net) and
+[nix-direnv](https://github.com/nix-community/nix-direnv):
 
-Your shell and editors should pick up on the `.envrc` files in different directories and prepare the environment accordingly. Use `direnv allow` to enable the direnv environment and `direnv reload` to reload it when necessary. Otherwise, the `.envrc` file contains a proper Nix target which will be used with the `nix develop --accept-flake-config` command.
+Your shell and editors should pick up on the `.envrc` files in different
+directories and prepare the environment accordingly. Use `direnv allow` to
+enable the direnv environment and `direnv reload` to reload it when necessary.
+Otherwise, the `.envrc` file contains a proper Nix target which will be used
+with the `nix develop --accept-flake-config` command.
 
 To install both using `nixpkgs`:
 
@@ -221,7 +236,15 @@ Or
 make shell
 ```
 
-Please be patient when building nix development environment for the first time, as it may take a very long time. Subsequent builds should be faster. Additionally, when you run `nix run .#help` you'll get a list of scripts you can run, the Github CI (nix flake check) is setup in a way where it checks the project builds successfully, haskell format is done correctly, and commit message follows conventional commits. Before pushing you should run `cabal run` , `nix run .#haskellFormat` (automatically formats all haskell files, including cabal), if you want to commit a correct format message you can run `cz commit`
+Please be patient when building nix development environment for the first time,
+as it may take a very long time. Subsequent builds should be faster.
+Additionally, when you run `nix run .#help` you'll get a list of scripts you can
+run, the Github CI (nix flake check) is setup in a way where it checks the
+project builds successfully, haskell format is done correctly, and commit
+message follows conventional commits. Before pushing you should
+run `cabal run`, `nix run .#haskellFormat` (automatically formats all haskell
+files, including cabal), if you want to commit a correct format message you can
+run `cz commit`.
 
 Build:
 
@@ -245,7 +268,9 @@ make export
 
 ### Using Routing Contract
 
-Head over to the [off-chain SDK of smart handles](https://github.com/Anastasia-Labs/smart-handles-offchain) to learn how to perform swaps via Minswap or read through some examples.
+Head over to the [off-chain SDK of smart handles](https://github.com/Anastasia-Labs/smart-handles-offchain) to
+learn how to define your instance's off-chain, or look
+through [an example with Minswap V1](https://github.com/Anastasia-Labs/smart-handles-offchain/tree/main/example).
 
 ## License
 
