@@ -1,7 +1,7 @@
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 # Table of Contents
 
-- [Smart Beacons](#smart-beacons)
+- [Smart Handles](#smart-handles)
     - [Introduction](#introduction)
     - [Documentation](#documentation)
         - [What problems do Smart Beacons solve?](#what-problems-do-smart-beacons-solve)
@@ -16,7 +16,7 @@
 
 <!-- markdown-toc end -->
 
-# Smart Beacons
+# Smart Handles
 
 ## Introduction
 
