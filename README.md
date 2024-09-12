@@ -5,9 +5,7 @@
     - [Introduction](#introduction)
     - [Documentation](#documentation)
         - [What problems do Smart Beacons solve?](#what-problems-do-smart-beacons-solve)
-        - [Details](#details)
-            - [Basic Routing Script](#basic-routing-script)
-            - [Advanced Routing Script](#advanced-routing-script)
+    - [Contract Logic](#contract-logic)
     - [Getting Started](#getting-started)
         - [Prerequisites](#prerequisites)
             - [Official option](#official-option)
@@ -17,7 +15,6 @@
     - [License](#license)
 
 <!-- markdown-toc end -->
-
 
 # Smart Beacons
 
