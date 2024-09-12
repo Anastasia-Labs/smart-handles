@@ -148,6 +148,17 @@ You may have noticed that both redeemers are using the [UTxO indexer pattern](ht
 for a more optimized performance.
 
 
+## Off-Chain Tools
+
+There are 2 packages available for working with smart handles instances:
+- [`smart-handles-offchain`](https://github.com/Anastasia-Labs/smart-handles-offchain)
+  offers config interfaces to build transactions for all possible endpoints
+- [`smart-handles-agent`](https://github.com/Anastasia-Labs/smart-handles-agent)
+  provides a CLI application generator function that allows instances to have
+  curated user-friendly Node applications for submitting, routing and reclaiming
+  requests
+
+
 ## Getting Started
 
 ### Prerequisites
