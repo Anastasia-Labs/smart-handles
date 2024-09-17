@@ -37,8 +37,8 @@ instance PTryFrom PData PSmartRedeemer
 instance PUnsafeLiftDecl PSmartRedeemer where type PLifted PSmartRedeemer = SmartRedeemer
 deriving via (DerivePConstantViaData SmartRedeemer PSmartRedeemer) instance PConstantDecl SmartRedeemer
 
-pstakeScriptIsInvoked :: Term s (PScriptContext :--> PStakingCredential :--> POpaque)
-pstakeScriptIsInvoked = plam $ \ctx stakeScript -> P.do
+passertStakeScriptIsInvoked :: Term s (PScriptContext :--> PStakingCredential :--> POpaque)
+passertStakeScriptIsInvoked = plam $ \ctx stakeScript -> P.do
   ctxF <- pletFields @'["txInfo"] ctx
   let stakeCerts = pfield @"wdrl" # ctxF.txInfo
   pmatch (AssocMap.plookup # stakeScript # stakeCerts) $ \case
@@ -51,10 +51,10 @@ smartHandleRouteValidatorW = phoistAcyclic $ plam $ \stakeScript datum redeemer 
       dat = pconvertChecked @PSmartHandleDatum datum
   pmatch red $ \case
     PRouteSmart _ ->
-      pstakeScriptIsInvoked # ctx # stakeScript
+      passertStakeScriptIsInvoked # ctx # stakeScript
     PReclaimSmart _ ->
       pmatch dat $ \case
         PSimple ((pfield @"owner" #) -> owner) ->
           popaque $ psignedByOwner # ctx # owner
         PAdvanced _ ->
-          pstakeScriptIsInvoked # ctx # stakeScript
+          passertStakeScriptIsInvoked # ctx # stakeScript

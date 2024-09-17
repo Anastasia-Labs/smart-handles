@@ -284,10 +284,9 @@ psingleAssetToTriple = plam $ \asset ->
 -- | Grabs the singular asset in a given `PValue`, ignoring its ADA.
 pgetSingleAssetApartFromADA ::
   forall
-    (anyOrder :: KeyGuarantees)
     (anyAmount :: AmountGuarantees)
     (s :: S).
-  Term s (PValue anyOrder anyAmount) ->
+  Term s (PValue 'Sorted anyAmount) ->
   Term s (PTriple PCurrencySymbol PTokenName PInteger)
 pgetSingleAssetApartFromADA v =
   -- not using `pelimList` as it would've lead to evaluation of the head
