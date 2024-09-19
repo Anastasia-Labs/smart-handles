@@ -4,7 +4,7 @@ import PlutusLedgerApi.V1.Value (AssetClass)
 import PlutusLedgerApi.V2 (Address (..), Credential (..), CurrencySymbol, DatumHash, PubKeyHash, StakingCredential (..), TokenName)
 import PlutusTx qualified
 
-import Plutarch.Api.V2 (PAddress, PCurrencySymbol, PDatum, PDatumHash, PMaybeData (..), PPubKeyHash, PScriptContext, PStakeValidator, PTokenName)
+import Plutarch.Api.V2 (PAddress, PCurrencySymbol, PDatumHash, PMaybeData (..), PPubKeyHash, PScriptContext, PStakeValidator, PTokenName)
 import Plutarch.DataRepr
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Monadic qualified as P
@@ -101,6 +101,8 @@ deriving via (DerivePConstantViaData MinswapRequestDatum PMinswapRequestDatum) i
 data MinswapRequestInfo = MinswapRequestInfo
   { desiredAssetSymbol :: CurrencySymbol
   , desiredAssetTokenName :: TokenName
+  , receiverDatumHash :: Maybe DatumHash
+  , minimumReceive :: Integer
   }
 
 PlutusTx.makeLift ''MinswapRequestInfo
@@ -113,6 +115,8 @@ data PMinswapRequestInfo (s :: S)
           ( PDataRecord
               '[ "desiredAssetSymbol" ':= PCurrencySymbol
                , "desiredAssetTokenName" ':= PTokenName
+               , "receiverDatumHash" ':= PMaybeData (PAsData PDatumHash)
+               , "minimumReceive" ':= PInteger
                ]
           )
       )
@@ -159,28 +163,34 @@ minSwapAddress =
       orderAddr = Address (ScriptCredential orderCred) (Just (StakingHash orderStakeCred))
    in pconstant orderAddr
 
-validateFn :: Term s (PAddress :--> PData :--> PDatum :--> PBool)
-validateFn = plam $ \owner extraInfoData outputDatum -> P.do
-  let extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
-      outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
-  extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName"] extraInfo
-  outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
-  orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
-  desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
-  pand'List
-    [ ptraceIfFalse "Incorrect Swap Sender" (outDatumF.sender #== owner)
-    , ptraceIfFalse "Incorrect Swap Receiver" (outDatumF.receiver #== owner)
-    , ptraceIfFalse
-        "Incorrect ReceiverDatumHash"
-        ( pmatch outDatumF.receiverDatumHash $ \case
-            PDJust _ -> pconstant False
-            PDNothing _ -> pconstant True
+validateFn :: Term s PCustomValidator
+validateFn = plam $ \mOwner _routingFee _inputValue extraInfoData outputDatum forRoute ctx ->
+  pmatch mOwner $ \case
+    PDJust ((pfield @"_0" #) -> owner) ->
+      pif
+        forRoute
+        ( let
+            extraInfo = pconvertUnsafe @PMinswapRequestInfo extraInfoData
+            outDatum = pconvertChecked @PMinswapRequestDatum (pto outputDatum)
+           in
+            P.do
+              extraInfoF <- pletFields @'["desiredAssetSymbol", "desiredAssetTokenName", "receiverDatumHash", "minimumReceive"] extraInfo
+              outDatumF <- pletFields @'["sender", "receiver", "receiverDatumHash", "step", "batcherFee", "outputAda"] outDatum
+              orderStepF <- pletFields @'["desiredAsset", "minReceive"] outDatumF.step
+              desiredAssetF <- pletFields @'["cs", "tn"] orderStepF.desiredAsset
+              pand'List
+                [ ptraceIfFalse "Incorrect Swap Sender" (outDatumF.sender #== owner)
+                , ptraceIfFalse "Incorrect Swap Receiver" (outDatumF.receiver #== owner)
+                , ptraceIfFalse "Incorrect ReceiverDatumHash" (outDatumF.receiverDatumHash #== extraInfoF.receiverDatumHash)
+                , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== extraInfoF.desiredAssetSymbol)
+                , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== extraInfoF.desiredAssetTokenName)
+                , ptraceIfFalse "Incorrect Minimum Receive" (orderStepF.minReceive #== extraInfoF.minimumReceive)
+                , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
+                , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
+                ]
         )
-    , ptraceIfFalse "Incorrect Target Policy Id" (desiredAssetF.cs #== extraInfoF.desiredAssetSymbol)
-    , ptraceIfFalse "Incorrect Target Token Name" (desiredAssetF.tn #== extraInfoF.desiredAssetTokenName)
-    , ptraceIfFalse "Incorrect Batcher Fee" (pfromData outDatumF.batcherFee #== pconstant 2_000_000)
-    , ptraceIfFalse "Incorrect Output ADA" (pfromData outDatumF.outputAda #== pconstant 2_000_000)
-    ]
+        (psignedByOwner # ctx # owner)
+    PDNothing _ -> pconstant False
 
 psingleValidator :: Term s (PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
 psingleValidator = psmartHandleValidator # validateFn

@@ -2,15 +2,34 @@
 
 module Utils where
 
+import PlutusLedgerApi.V2 (CurrencySymbol, TokenName)
+import PlutusTx qualified
+
+import Plutarch.Api.V1.Address (PCredential (..))
 import Plutarch.Api.V1.AssocMap (plookup)
+import Plutarch.Api.V1.Value (padaSymbol, padaToken, pforgetPositive, psingleton)
+import Plutarch.Api.V1.Value qualified as Value
 import Plutarch.Api.V2
 import Plutarch.Bool
 import Plutarch.DataRepr
+import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (..))
 import Plutarch.Maybe (pfromJust)
-import Plutarch.Prelude
+import Plutarch.Monadic qualified as P
+import Plutarch.Prelude hiding (psingleton)
 import Plutarch.Unsafe (punsafeCoerce)
 import "liqwid-plutarch-extra" Plutarch.Extra.List (plookupAssoc)
 import "liqwid-plutarch-extra" Plutarch.Extra.TermCont
+
+type PCustomValidator =
+  ( PMaybeData PAddress -- possible owner
+      :--> PInteger -- routing fee
+      :--> PValue 'Sorted 'Positive -- value of the input utxo
+      :--> PData -- extraInfo from the `Advanced` datum
+      :--> PDatum -- routing address output datum (resolved hash, or inline)
+      :--> PBool -- routing flag (`True` for routing, `False` for reclaiming)
+      :--> PScriptContext -- script context
+      :--> PBool
+  )
 
 data PAssetClass (s :: S) = PAssetClass (Term s (PDataRecord '["cs" ':= PCurrencySymbol, "tn" ':= PTokenName]))
   deriving stock (Generic)
@@ -20,6 +39,46 @@ instance DerivePlutusType PAssetClass where
   type DPTStrat _ = PlutusTypeData
 
 instance PTryFrom PData PAssetClass
+
+data PTriple (a :: PType) (b :: PType) (c :: PType) (s :: S)
+  = PTriple (Term s a) (Term s b) (Term s c)
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PEq, PShow)
+
+instance DerivePlutusType (PTriple a b c) where type DPTStrat _ = PlutusTypeScott
+
+data RequiredMint
+  = Singleton CurrencySymbol TokenName
+  | None
+
+PlutusTx.makeLift ''RequiredMint
+PlutusTx.makeIsDataIndexed
+  ''RequiredMint
+  [ ('Singleton, 0)
+  , ('None, 1)
+  ]
+
+data PRequiredMint (s :: S)
+  = PSingleton
+      ( Term
+          s
+          ( PDataRecord
+              '[ "policy" ':= PCurrencySymbol
+               , "name" ':= PTokenName
+               ]
+          )
+      )
+  | PNone (Term s (PDataRecord '[]))
+  deriving stock (Generic)
+  deriving anyclass (PlutusType, PIsData)
+
+instance DerivePlutusType PRequiredMint where
+  type DPTStrat _ = PlutusTypeData
+
+instance PTryFrom PData PRequiredMint
+
+instance PUnsafeLiftDecl PRequiredMint where type PLifted PRequiredMint = RequiredMint
+deriving via (DerivePConstantViaData RequiredMint PRequiredMint) instance PConstantDecl RequiredMint
 
 pexpectJust :: Term s r -> Term s (PMaybe a) -> TermCont @r s (Term s a)
 pexpectJust escape ma = tcont $ \f -> pmatch ma $ \case
@@ -145,3 +204,124 @@ pconvertChecked x = ptryFrom x fst
 
 pconvertUnsafe :: forall (b :: PType) (a :: PType) (s :: S). (PTryFrom a b) => Term s a -> Term s b
 pconvertUnsafe = punsafeCoerce
+
+psignedByOwner :: Term s (PScriptContext :--> PAddress :--> PBool)
+psignedByOwner = plam $ \ctx owner ->
+  pmatch (pfield @"credential" # owner) $ \case
+    PPubKeyCredential ((pfield @"_0" #) -> pkh) ->
+      pelem @PBuiltinList # pkh # (pfield @"signatories" # (pfield @"txInfo" # ctx))
+    _ ->
+      pcon PFalse
+
+pvalueHasChangedByLovelaces :: Term s (PValue 'Sorted 'Positive :--> PValue 'Sorted 'Positive :--> PInteger :--> PBool)
+pvalueHasChangedByLovelaces = plam $ \inVal outVal change ->
+  pif
+    (change #== 0)
+    (outVal #== inVal)
+    (pforgetPositive outVal #== (pforgetPositive inVal <> (psingleton # padaSymbol # padaToken # change)))
+
+presolveMapToList ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (a :: PType)
+    (b :: PType)
+    (s :: S).
+  Term s (PMap anyOrder a b) ->
+  Term s (PBuiltinList (PBuiltinPair (PAsData a) (PAsData b)))
+presolveMapToList m = pmatch m $ \(PMap l) -> l
+
+{- | Converts a `PValue` to a `PBuiltinList`. Does not convert the inner `PMap`
+of token names and quantities to a list.
+-}
+presolveValueToList ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (anyAmount :: AmountGuarantees)
+    (s :: S).
+  Term s (PValue anyOrder anyAmount) ->
+  Term s (PBuiltinList (PBuiltinPair (PAsData PCurrencySymbol) (PAsData (PMap anyOrder PTokenName PInteger))))
+presolveValueToList v =
+  pmatch v $ \(PValue v') ->
+    pmatch (presolveMapToList v') $ \kvs -> pcon kvs
+
+{- | Get the head of the list if the list contains exactly one element,
+otherwise error.
+-}
+pheadSingleton ::
+  (PListLike list, PElemConstraint list a) =>
+  Term s (list a) ->
+  Term s a
+pheadSingleton =
+  pelimList
+    (pelimList (\_ _ -> ptraceError "List contains more than one element."))
+    (ptraceError "List is empty.")
+
+-- | Helper function for converting intermediary datatypes.
+psingleAssetToTriple ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (s :: S).
+  Term
+    s
+    ( PBuiltinPair
+        (PAsData PCurrencySymbol)
+        (PAsData (PMap anyOrder PTokenName PInteger))
+        :--> PTriple PCurrencySymbol PTokenName PInteger
+    )
+psingleAssetToTriple = plam $ \asset ->
+  let
+    cs = pfstBuiltin # asset
+    tnQtyMap = psndBuiltin # asset
+    tnQtyPairs = presolveMapToList $ pfromData tnQtyMap
+   in
+    plet (pheadSingleton tnQtyPairs) $ \tnQtyPair ->
+      let
+        tn = pfstBuiltin # tnQtyPair
+        qty = psndBuiltin # tnQtyPair
+       in
+        pcon (PTriple (pfromData cs) (pfromData tn) (pfromData qty))
+
+-- | Grabs the singular asset in a given `PValue`, ignoring its ADA.
+pgetSingleAssetApartFromADA ::
+  forall
+    (anyAmount :: AmountGuarantees)
+    (s :: S).
+  Term s (PValue 'Sorted anyAmount) ->
+  Term s (PTriple PCurrencySymbol PTokenName PInteger)
+pgetSingleAssetApartFromADA v =
+  -- not using `pelimList` as it would've lead to evaluation of the head
+  psingleAssetToTriple #$ pheadSingleton $ ptail # presolveValueToList v
+
+{- | Check if the mint field contains exactly the provided singleton. Returns
+  the mint amount.
+-}
+pgetMintQuantityOfSingleton ::
+  Term s PCurrencySymbol ->
+  Term s PTokenName ->
+  Term s (PValue 'Sorted 'NoGuarantees) ->
+  Term s PInteger
+pgetMintQuantityOfSingleton policy name mintVal =
+  pmatch (pgetSingleAssetApartFromADA mintVal) $ \(PTriple mintCS mintTN mintQty) ->
+    pif
+      ( ptraceIfFalse
+          "Tx mint doesn't match the reclaim mint"
+          (pand'List [policy #== mintCS, name #== mintTN])
+      )
+      mintQty
+      perror
+
+papplyRequiredMintToInputValue ::
+  Term s (PValue 'Sorted 'NoGuarantees) ->
+  Term s PRequiredMint ->
+  Term s (PValue 'Sorted 'Positive) ->
+  Term s (PValue 'Sorted 'Positive)
+papplyRequiredMintToInputValue mint requiredMint inputValue =
+  pmatch requiredMint $ \case
+    PSingleton rm -> P.do
+      rmF <- pletFields @'["policy", "name"] rm
+      let mintQty = pgetMintQuantityOfSingleton rmF.policy rmF.name mint
+          requiredMintValue = Value.psingleton # rmF.policy # rmF.name # mintQty
+          inputAppendedWithMint = requiredMintValue <> pforgetPositive inputValue
+      Value.passertPositive # inputAppendedWithMint
+    PNone _ ->
+      inputValue
