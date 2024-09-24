@@ -281,6 +281,25 @@ psingleAssetToTriple = plam $ \asset ->
        in
         pcon (PTriple (pfromData cs) (pfromData tn) (pfromData qty))
 
+-- | Grabs the singular asset in a given `PValue`
+pgetSingleAsset ::
+  forall
+    (anyOrder :: KeyGuarantees)
+    (anyAmount :: AmountGuarantees)
+    (s :: S).
+  Term s (PValue anyOrder anyAmount) ->
+  Term s (PTriple PCurrencySymbol PTokenName PInteger)
+pgetSingleAsset v =
+  pelimList
+    ( \h t ->
+        pelimList
+          (\_ _ -> ptraceError "More than one asset was found")
+          (psingleAssetToTriple # h)
+          t
+    )
+    (ptraceError "No assets found")
+    (presolveValueToList v)
+
 -- | Grabs the singular asset in a given `PValue`, ignoring its ADA.
 pgetSingleAssetApartFromADA ::
   forall

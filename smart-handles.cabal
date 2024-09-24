@@ -21,9 +21,9 @@ maintainer:         colll78@colll78
 -- category:
 extra-source-files: CHANGELOG.md
 
-flag optimized
+flag mainnet
   description:
-    If optimized is True, some checks are disabled. Disable checks to create optimized scripts.
+    If mainnet is True, some checks are disabled. Disable checks to create optimized scripts.
 
   default:     False
   manual:      True
@@ -146,16 +146,19 @@ library
     Constants
     SingleValidator
     Specialized.Minswap
+    Specialized.MinswapV2
+    Specialized.MinswapV2.Constants
+    Specialized.MinswapV2.Utils
     StakingValidator
     Utils
 
   hs-source-dirs:  src
 
-  if flag(optimized)
-    hs-source-dirs: src-optimized
+  if flag(mainnet)
+    hs-source-dirs: src-mainnet
 
   else
-    hs-source-dirs: src-checked
+    hs-source-dirs: src-testnet
 
 test-suite smart-handles-test
   import:         lang, dependencies, test-dependencies
