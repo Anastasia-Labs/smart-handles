@@ -10,13 +10,14 @@ import Plutarch.Prelude
 
 import Plutarch.Api.V1 (PAddress, PCurrencySymbol, PPubKeyHash, PTokenName)
 import Plutarch.Api.V1.Address (PCredential (..))
-import Plutarch.Api.V2 (PMaybeData (..), PScriptHash)
+import Plutarch.Api.V2 (PMaybeData (..), PScriptContext, PScriptHash, PStakeValidator)
 
-import Utils (PTriple (..), pand'List, pconvertChecked, pgetSingleAsset, PCustomValidator)
+import SingleValidator (PSmartHandleDatum, PSmartHandleRedeemer, psmartHandleValidator)
+import StakingValidator (smartHandleStakeValidatorW)
+import Utils (PCustomValidator, PTriple (..), pand'List, pconvertChecked, pgetSingleAsset)
 
 import Specialized.MinswapV2.Constants (padaToMinLPTokenName, pbatcherFee, pminswapV2LPSymbol)
 import Specialized.MinswapV2.Utils (plovelacesAfterFees)
-
 
 --------------------------------------------------------------------------------
 
@@ -319,7 +320,7 @@ validateFn = plam $ \mOwner _routingFee inputValue _extraInfoData outputDatum _f
   let inputQuantity =
         pmatch (pgetSingleAsset inputValue) $ \(PTriple _ _ inLovelaces) ->
           plovelacesAfterFees # inLovelaces
-       
+
       validSwap =
         pand'List
           [ lpAssetF.policyId #== pminswapV2LPSymbol
@@ -342,3 +343,8 @@ validateFn = plam $ \mOwner _routingFee inputValue _extraInfoData outputDatum _f
     , extraValidations
     ]
 
+psingleValidator :: Term s (PAddress :--> PSmartHandleDatum :--> PSmartHandleRedeemer :--> PScriptContext :--> PUnit)
+psingleValidator = psmartHandleValidator # validateFn
+
+pstakeValidator :: Term s (PAddress :--> PStakeValidator)
+pstakeValidator = smartHandleStakeValidatorW # validateFn

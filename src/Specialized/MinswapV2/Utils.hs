@@ -1,8 +1,11 @@
 module Specialized.MinswapV2.Utils where
 
-import Specialized.MinswapV2.Constants (pbatcherFee, pdeposit)
 import Plutarch.Api.V1 (PCurrencySymbol, PTokenName (PTokenName))
 import Plutarch.Prelude
+
+import Constants (routerFeeForSimpleRoutes)
+
+import Specialized.MinswapV2.Constants (pbatcherFee, pdeposit)
 
 pcomputeLPAssetName ::
   Term s PCurrencySymbol ->
@@ -20,4 +23,4 @@ pcomputeLPAssetName assetAPolicyID assetATokenName assetBPolicyID assetBTokenNam
 
 plovelacesAfterFees :: Term s (PInteger :--> PInteger)
 plovelacesAfterFees = plam $ \inputLovelaces ->
-  inputLovelaces - pbatcherFee - pdeposit
+  inputLovelaces - pbatcherFee - pdeposit - routerFeeForSimpleRoutes
