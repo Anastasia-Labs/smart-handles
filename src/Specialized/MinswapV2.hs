@@ -263,34 +263,6 @@ deriving via (DerivePConstantViaData OrderDatum POrderDatum) instance PConstantD
 
 --------------------------------------------------------------------------------
 
-data MinswapRequest = MinswapRequest Bool Integer Bool
-
-PlutusTx.makeLift ''MinswapRequest
-PlutusTx.makeIsDataIndexed ''MinswapRequest [('MinswapRequest, 0)]
-
-data PMinswapRequest (s :: S)
-  = PMinswapRequest
-      ( Term
-          s
-          ( PDataRecord
-              '[ "aToBDirection" ':= PBoolData
-               , "minimumReceive" ':= PInteger
-               ]
-          )
-      )
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields)
-
-instance DerivePlutusType PMinswapRequest where
-  type DPTStrat _ = PlutusTypeData
-
-instance PTryFrom PData PMinswapRequest
-
-instance PUnsafeLiftDecl PMinswapRequest where type PLifted PMinswapRequest = MinswapRequest
-deriving via (DerivePConstantViaData MinswapRequest PMinswapRequest) instance PConstantDecl MinswapRequest
-
---------------------------------------------------------------------------------
-
 validateFn :: forall (s :: S). Term s PCustomValidator
 validateFn = plam $ \mOwner _routingFee inputValue _extraInfoData outputDatum _forRoute _ctx -> P.do
   ---- INITIAL SETUP -----------------------------------------------------------
