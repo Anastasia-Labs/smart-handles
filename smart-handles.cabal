@@ -21,9 +21,9 @@ maintainer:         colll78@colll78
 -- category:
 extra-source-files: CHANGELOG.md
 
-flag mainnet
+flag testnet
   description:
-    If mainnet is True, some checks are disabled. Disable checks to create optimized scripts.
+    If testnet is True, some checks are enabled. Disable checks to create optimized scripts.
 
   default:     False
   manual:      True
@@ -154,11 +154,11 @@ library
 
   hs-source-dirs:  src
 
-  if flag(mainnet)
-    hs-source-dirs: src-mainnet
+  if flag(testnet)
+    hs-source-dirs: src-testnet
 
   else
-    hs-source-dirs: src-testnet
+    hs-source-dirs: src-mainnet
 
 test-suite smart-handles-test
   import:         lang, dependencies, test-dependencies

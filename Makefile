@@ -39,4 +39,4 @@ ci:
 
 .PHONY: export
 export:
-	cabal clean && cabal run smart-handles -f mainnet
+	cabal clean && cabal run smart-handles
