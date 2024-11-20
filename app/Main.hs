@@ -19,7 +19,9 @@ import "liqwid-plutarch-extra" Plutarch.Extra.Script (applyArguments)
 
 import BatchValidator (smartHandleRouteValidatorW)
 import Compilation
-import Specialized.Minswap
+import Specialized.Minswap qualified as MV1
+import Specialized.Minswap.Constants qualified as MV1
+import Specialized.MinswapV2 qualified as MV2
 
 encodeSerialiseCBOR :: Script -> Text
 encodeSerialiseCBOR = Text.decodeUtf8 . Base16.encode . CBOR.serialize' . serialiseScript
@@ -50,14 +52,20 @@ main = do
   putStrLn "Exporting Plutarch scripts..."
   setSGR [Reset]
 
-  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.json" psingleValidator
-  putStrLn "Exported smart handle validator"
-
   writePlutusScript "Smart Handle Router" "./compiled/smartHandleRouter.json" smartHandleRouteValidatorW
   putStrLn "Exported smart handle router validator"
 
-  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.json" pstakeValidator
-  putStrLn "Exported smart handle stake validator"
+  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.json" (MV1.psingleValidator # MV1.pminswapAddress)
+  putStrLn "Exported smart handle validator (Minswap V1)"
+
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.json" (MV1.pstakeValidator # MV1.pminswapAddress)
+  putStrLn "Exported smart handle stake validator (Minswap V1)"
+
+  writePlutusScript "Smart Handle" "./compiled/minswap-v2/smartHandleSimple.json" MV2.psingleValidator
+  putStrLn "Exported smart handle validator (Minswap V2)"
+
+  writePlutusScript "Smart Handle Router" "./compiled/minswap-v2/smartHandleStake.json" MV2.pstakeValidator
+  putStrLn "Exported smart handle stake validator (Minswap V2)"
 
   setSGR [SetColor Foreground Vivid Green]
   putStrLn "Done exporting Plutarch scripts, have a great day!"

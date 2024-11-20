@@ -4,14 +4,15 @@ help:
 	@echo "use: make <command>"
 	@echo
 	@echo "Where <command>:"
-	@echo "  help       -- show this help"
-	@echo "  shell      -- opens a development shell for the smart contract project"
-	@echo "  code       -- start a vscode instance in the nix development shell"
-	@echo "  clean      -- cabal clean"
-	@echo "  build      -- build the smart contracts"
-	@echo "  test       -- run the smart contract tests"
-	@echo "  ci         -- run ci job"
-	@echo "  export     -- exports the contracts to the exported directory"
+	@echo "  help           -- show this help"
+	@echo "  shell          -- opens a development shell for the smart contract project"
+	@echo "  code           -- start a vscode instance in the nix development shell"
+	@echo "  clean          -- cabal clean"
+	@echo "  build          -- build the smart contracts"
+	@echo "  test           -- run the smart contract tests"
+	@echo "  ci             -- run ci job"
+	@echo "  export         -- exports the contracts to the exported directory"
+	@echo "  export_testnet -- exports the unoptimized contracts to the exported directory"
 
 .PHONY: shell
 shell:
@@ -39,4 +40,8 @@ ci:
 
 .PHONY: export
 export:
-	cabal clean && cabal run smart-handles -f optimized
+	cabal clean && cabal run smart-handles
+
+.PHONY: export_testnet
+export_testnet:
+	cabal clean && cabal run smart-handles -f testnet
