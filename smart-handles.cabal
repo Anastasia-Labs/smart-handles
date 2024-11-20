@@ -146,6 +146,7 @@ library
     Constants
     SingleValidator
     Specialized.Minswap
+    Specialized.Minswap.Constants
     Specialized.MinswapV2
     Specialized.MinswapV2.Constants
     Specialized.MinswapV2.Utils

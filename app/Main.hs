@@ -20,6 +20,7 @@ import "liqwid-plutarch-extra" Plutarch.Extra.Script (applyArguments)
 import BatchValidator (smartHandleRouteValidatorW)
 import Compilation
 import Specialized.Minswap qualified as MV1
+import Specialized.Minswap.Constants qualified as MV1
 import Specialized.MinswapV2 qualified as MV2
 
 encodeSerialiseCBOR :: Script -> Text
@@ -54,10 +55,10 @@ main = do
   writePlutusScript "Smart Handle Router" "./compiled/smartHandleRouter.json" smartHandleRouteValidatorW
   putStrLn "Exported smart handle router validator"
 
-  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.json" MV1.psingleValidator
+  writePlutusScript "Smart Handle" "./compiled/smartHandleSimple.json" (MV1.psingleValidator # MV1.pminswapAddress)
   putStrLn "Exported smart handle validator (Minswap V1)"
 
-  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.json" MV1.pstakeValidator
+  writePlutusScript "Smart Handle Router" "./compiled/smartHandleStake.json" (MV1.pstakeValidator # MV1.pminswapAddress)
   putStrLn "Exported smart handle stake validator (Minswap V1)"
 
   writePlutusScript "Smart Handle" "./compiled/minswap-v2/smartHandleSimple.json" MV2.psingleValidator
